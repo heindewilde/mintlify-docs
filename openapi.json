@@ -1107,7 +1107,7 @@
               "string",
               "null"
             ],
-            "description": "A collection's title. Always null for a transfer, whose title is never shown to recipients."
+            "description": "A collection's title, or your own transfer's title when you ask for its links. Null when resolving a transfer link someone shared with you: a transfer's title is never shown to recipients."
           },
           "message": {
             "type": [
@@ -3180,7 +3180,7 @@
                       "paused",
                       "closed"
                     ],
-                    "description": "`paused` stops uploads until set back to `active`; `closed` stops them for good."
+                    "description": "`paused` stops uploads until set back to `active`; `closed` stops them for good, and a closed request cannot be set back."
                   }
                 },
                 "required": [
