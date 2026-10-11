@@ -1,0 +1,56 @@
+---
+title: "A nightly report hand-off"
+description: "Send a generated report every night from cron with yungle send --json, parse the link with jq, and keep a log of what went out and when."
+---
+
+A report is generated every night and somebody needs it by morning. Attaching it to an
+email works until the day it is 40 MB. This recipe sends it as a transfer from cron, logs
+what went out, and leaves you a record to check against.
+
+## The script
+
+```bash
+#!/usr/bin/env bash
+# /usr/local/bin/send-nightly-report
+set -euo pipefail
+
+export YUNGLE_API_KEY="$(cat /etc/yungle/api-key)"   # readable by this user only
+REPORT="/var/reports/$(date +%F).xlsx"
+LOG=/var/log/yungle-reports.jsonl
+
+/usr/local/bin/generate-report > "$REPORT"
+
+yungle send "$REPORT" \
+  --to finance@example.com \
+  --title "Nightly report $(date +%F)" \
+  --expires 7 \
+  --json \
+  | jq -c --arg file "$REPORT" '{at: now | todate, file: $file, id, url, notified}' \
+  >> "$LOG"
+```
+
+And the crontab entry, at six every morning:
+
+```bash
+0 6 * * * /usr/local/bin/send-nightly-report 2>> /var/log/yungle-reports.err
+```
+
+## What each part is for
+
+- **A key file, not the crontab** — cron environments are easy to leak through `ps` and backups. Give the key only `transfers:write` and `transfers:read`.
+- **`--expires 7`** — a daily report does not need to outlive the week. The value is clamped to your plan’s maximum rather than rejected.
+- **A JSON Lines log** — one line per send with the transfer id and link. When someone asks “did Tuesday’s go out?”, the answer is one `grep` away.
+- **`set -euo pipefail`** — if the report fails to generate, nothing is sent. An empty report delivered on time is worse than a late one.
+
+## If the upload is interrupted
+
+Run the same command again. The CLI remembers an interrupted upload of the same files to
+the same destination and continues it instead of starting over. For a cron job, the next
+night’s run is a new report and a new transfer, so there is nothing to clean up.
+
+<Note>
+  Checking whether the report was downloaded is a poll against
+  `GET /transfers/{id}/downloads` using the id from the log, or a
+  `transfer.downloaded` webhook tells you when it happens. See
+  [Transfers](/transfers).
+</Note>

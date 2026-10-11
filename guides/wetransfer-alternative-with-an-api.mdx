@@ -1,0 +1,62 @@
+---
+title: "A WeTransfer alternative with an API"
+sidebarTitle: "vs WeTransfer"
+description: "An EU-hosted file transfer service with a documented public API, a command-line client and per-file encryption — including where it is the wrong choice."
+---
+
+If you are here because you want to send client files from your own code and found that option closed, this page is the short version of what Yungle offers instead — including where it falls short.
+
+## The short version
+
+| | Yungle |
+| --- | --- |
+| Public API | Documented, versioned, OpenAPI 3.1 spec. Open on every tier, including free. |
+| Command-line client | Yes — resumable, survives an interrupted upload. |
+| AI assistant access | A hosted MCP server with sign-in; emails only with your yes. |
+| Where files live | One server in Germany. Backups in the EU. |
+| Encryption | Every file encrypted at rest with its own key. |
+| Free tier | 10 GB per transfer, unlimited transfers, 7 days, no account needed. |
+| API uploads | 10 GB a month included on any tier, then €0.02/GB from prepaid credit. Downloads never metered. |
+| Paid | From €5/month for 250 GB that never expires. |
+
+<Note>
+What is stated above is what Yungle does, which is the part we can keep true. There is a side-by-side against named alternatives on the [home page](https://yungle.co/compare), limited to limits and capabilities taken from each company’s own documentation and stamped with the date it was checked — prices are left out on purpose, because theirs move faster than we could keep up with.
+</Note>
+
+## What the API actually gives you
+
+Delivery becomes a step in a pipeline rather than a website someone visits. Three calls and the bytes:
+
+```bash
+# Create a draft — nothing is live and nobody is emailed yet
+curl -X POST https://yungle.co/api/v1/transfers \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"files":[{"name":"final.mov","size":8123456789}]}'
+
+# …stream the bytes to the returned tusEndpoint…
+
+# Send it
+curl -X POST https://yungle.co/api/v1/transfers/$ID/finalize \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"recipients":["client@example.com"]}'
+```
+
+Then read who collected it, so your own project tool can tell you rather than you checking.
+
+## Where Yungle is the wrong choice
+
+Stated plainly, because finding out later is worse:
+
+- It runs on one server. There is no global CDN, so a download from Australia crosses the world. That is the trade for knowing exactly where your files are.
+- It is small. No enterprise SSO, no SLA, no procurement paperwork, and support is one person.
+- Signed webhooks for sends, downloads and expiry, or pull the same events if you have no public URL.
+- No mobile apps. The site works on a phone; there is nothing to install.
+- If your files must not be readable by the host at all, the ordinary product is not that — it encrypts per file with keys Yungle holds, which is what makes previews and virus scanning possible. The vault and end-to-end transfers are the opt-in exceptions, and they are the parts the API cannot reach.
+
+## Start reading for free
+
+The API works on every account. Sending transfers, reading download receipts and webhooks are on the free plan; collections come with a paid one.
+
+[Full API reference](/) · [Send from the command line](/guides/send-large-files-from-the-command-line)

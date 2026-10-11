@@ -1,0 +1,86 @@
+---
+title: "Changelog"
+description: "What changed in the Yungle API and when, plus the versioning policy: /api/v1 is additive-only."
+---
+
+`/api/v1` is additive-only. New fields and endpoints may appear here; nothing existing will change meaning, disappear, or become required. Anything that would break a client ships as `/api/v2`, and v1 keeps working.
+
+## What counts as additive
+
+- A new endpoint, or a new method on an existing one.
+- A new optional request field.
+- A new field in a response — so parse leniently and ignore what you do not recognise.
+- A new error code, within an existing status. Branch on codes you know and treat the rest by status.
+- A new scope. Existing keys keep exactly the scopes they were issued.
+
+What will not happen without a version bump: removing or renaming a field, changing a field's type, making an optional field required, changing the status code for an existing condition, or narrowing what a scope grants.
+
+## Deprecation and sunset
+
+No v1 operation is deprecated today. If one ever is, it keeps working for **at least six months** from the day it is announced, and you will see it in three places before it stops:
+
+- An entry on this page naming the operation, what replaces it, and its last day.
+- `deprecated: true` on the operation in the [OpenAPI document](https://yungle.co/api/v1/openapi.json).
+- On every response from it, a `Deprecation` header (RFC 9745) with the date it was deprecated, and a `Sunset` header (RFC 8594) with the date it will stop answering. Log either header when you see it and you will hear about it from your own monitoring rather than from a failure.
+
+A version as a whole is retired the same way, with the same six months at least, and only after its successor has shipped: when `/api/v2` exists, `/api/v1` keeps working until its own `Sunset` date.
+
+<Update label="2026-09-29">
+
+- **Uploads longer than two hours.** Upload targets carry `uploadTokenExpiresAt`, and `POST /api/uploads/token` trades a still-valid token for a fresh one. See [Uploading files](/uploads).
+- **Downloads.** `GET /transfers/{id}/download-links`, `GET /collections/{id}/download-links` and `POST /links/resolve` return signed, resumable URLs for your own files and for links shared with you. New error codes `password_required`, `wrong_password`, `guests_only` (403), `link_unavailable` (410) and `e2ee_unsupported` (409).
+- **Imports from URLs.** `imports` on `POST /transfers`, `POST /transfers/{id}/files` and `POST /collections/{id}/files`; `files` may now be empty when `imports` is not. Responses gain an `imports` array; follow one with `GET /imports/{fileId}`.
+- `crc32` on transfer files, collection files and download links.
+- **Upload requests.** `GET`/`POST /requests`, `GET`/`PATCH /requests/{id}`, and the paid webhook event `request.submitted`. `collection.file_uploaded` reports `source: "import"` for a file fetched from a URL.
+
+</Update>
+
+<Update label="2026-09-27">
+
+- Every response past authentication carries `RateLimit` and `RateLimit-Policy` headers (the IETF draft fields), one entry per bucket you were charged against. See [limits](/limits).
+- Error bodies gain `error.docs`, a link to the row on the [errors](/errors) page that explains the code.
+- A path under `/api` that is not an endpoint now answers `404 not_found` in JSON instead of an HTML page.
+- Repeated requests with no valid key from one address are limited to 60 a minute, then answered `429 rate_limited`. A valid key never counts against this.
+- The OpenAPI document gives every operation an `operationId`, and every 4xx and 5xx one shared, typed `Error` schema.
+- Every success response is now typed in the OpenAPI document, with the resources named under `components/schemas`, and the [reference](/api-reference) lists response fields. Nothing on the wire changed. The document now also gives the real status for `POST /webhooks/{id}/test` and `POST /webhooks/{id}/deliveries/{deliveryId}/retry`: both have always answered `202`, and it used to say `200`.
+
+</Update>
+
+<Update label="2026-09-26">
+
+- `opened` on a recipient is now always `false`. Whether someone loaded a transfer page is no longer recorded — a sender learns whether the files were downloaded, and nothing about the visit before that. The field stays in the response because removing one needs a version bump.
+- Webhooks: signed pushes for `transfer.ready`, `transfer.downloaded`, `transfer.expiring`, `transfer.expired` and `collection.file_uploaded`, or pull endpoints read from `/webhooks/{id}/events`. New scopes `webhooks:read` and `webhooks:write`.
+- OAuth 2.1 sign-in for apps (`/.well-known/oauth-authorization-server`), and the hosted MCP server at `/mcp`. An access token works on `/api/v1` like a key; an app may email recipients only if the user allowed `transfers:send`, and otherwise gets `403 insufficient_scope`.
+- `GET /me` reports `key.via` (`key` or `oauth`) and `key.canEmail`.
+
+</Update>
+
+<Update label="2026-09-25">
+
+- `GET /transfers` and `GET /collections/{id}/files` take `limit` and `cursor`, and return `nextCursor`. With neither parameter, both answer exactly as before: the latest 100 transfers, and every file.
+- Every `POST` accepts an `Idempotency-Key` header. A retry with the same key replays the original success instead of creating a second one.
+- Free accounts can create keys with transfers:write and contacts:write, which the API already accepted. Settings used to offer them read-only keys only.
+
+</Update>
+
+<Update label="2026-09-20">
+
+- `ipTruncated` on a download receipt is now always `null`. The truncated IP address is no longer recorded at all — telling a sender where their recipient downloaded from is profiling we would rather not do. The field stays in the response, and stays nullable, because removing one needs a version bump.
+- Download receipts, per-recipient delivery status and the transfer detail view are free on every account. They used to need a plan.
+- Recipients now report three states rather than two: emailed, opened, and downloaded.
+- Transfers can be given any expiry up to your plan’s maximum at creation, rather than only afterwards.
+
+</Update>
+
+<Update label="2026-07-29" description="v1">
+
+First release.
+
+- API keys, created in Settings → API keys. Six scopes across transfers, collections and contacts.
+- Transfers: create as draft, add and remove files, finalize, amend expiry and download limits, revoke, and read download receipts.
+- Collections: create, rename, delete, register and delete files, create and list folders, invite and remove guests.
+- Contacts: full CRUD.
+- Uploads via tus, resumable at part granularity, on the same endpoint the web app uses.
+- An OpenAPI 3.1 document at `/api/v1/openapi.json`, generated from the same definitions the server validates with.
+
+</Update>

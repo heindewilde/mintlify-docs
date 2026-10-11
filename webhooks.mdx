@@ -1,0 +1,97 @@
+---
+title: "Webhooks"
+description: "Signed webhooks for Yungle transfers: ready, downloaded, expiring and expired events, retries, HMAC-SHA256 signature checks in Node and Python, and pull mode."
+---
+
+Be told when a transfer is ready, downloaded, about to expire or gone, instead of asking. Yungle signs every request, retries for about two days, and can instead keep the events for you to pull when there is no public URL to send them to.
+
+## Events
+
+| Type | When | Plan |
+| --- | --- | --- |
+| `transfer.ready` | A transfer was sent and every file finished uploading: the link works. | Free |
+| `transfer.downloaded` | Someone downloaded it. One event per visit, however many files it took. | Free |
+| `transfer.expiring` | It expires within 24 hours. | Free |
+| `transfer.expired` | It expired or was revoked, and its files are gone. Carries only the id and a reason. | Free |
+| `collection.file_uploaded` | A file finished uploading into a collection: from you, the API, a URL import, or a file request. | Paid |
+| `request.submitted` | Someone sent files through one of your upload requests, and all of them have arrived. | Paid |
+| `webhook.test` | Sent when you ask for a test, whatever the endpoint subscribes to. | Any |
+
+Free includes one endpoint; paid plans up to ten. Add them under [Settings → Webhooks](https://yungle.co/dashboard/settings/webhooks), or with `POST /webhooks` and a key holding `webhooks:write`.
+
+## The request
+
+A `POST` with a JSON body and these headers: `Yungle-Event-Id`, `Yungle-Event-Type`, `Yungle-Delivery-Id` and `Yungle-Signature`.
+
+```json
+{
+  "id": "evt_01J…",
+  "type": "transfer.downloaded",
+  "createdAt": "2026-09-26T10:36:02.118Z",
+  "data": {
+    "transfer": { "id": "01J…", "title": "Final cut", "url": "https://yungle.co/t/…",
+                  "expiresAt": "2026-10-03T10:30:00.000Z", "downloadCount": 1 },
+    "download": { "sessionId": "01J…", "recipient": "client@example.com" }
+  }
+}
+```
+
+- Answer with any 2xx within 10 seconds. Anything else, a redirect included, counts as a failure.
+- Deliveries are retried after 1, 5 and 30 minutes, then 2, 6, 12 and 24 hours: eight attempts in all. Five events in a row that exhaust every retry pause the endpoint, and the owner gets one email.
+- **At least once, in no particular order.** A retry can arrive after a later event. Deduplicate on `id`: an event keeps it through every retry and redelivery.
+
+## Verifying the signature
+
+`Yungle-Signature: t=1758882962,v1=5f2b…`. `v1` is the hex HMAC-SHA256, keyed with your endpoint’s secret, of the timestamp, a dot, and the **raw** request body. Check it before parsing, reject a timestamp more than five minutes off, and compare in constant time.
+
+<CodeGroup>
+
+```javascript JavaScript
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// Express: app.post('/hooks/yungle', express.raw({ type: 'application/json' }), handler)
+export function verifyYungle(rawBody, header, secret, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(header.split(',').map((p) => p.split('=')));
+  const t = Number(parts.t);
+  if (!t || Math.abs(Date.now() / 1000 - t) > toleranceSeconds) return false;
+  const expected = createHmac('sha256', secret).update(`${t}.${rawBody}`).digest();
+  const given = Buffer.from(parts.v1 ?? '', 'hex');
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+```
+
+```python Python
+import hashlib, hmac, time
+
+def verify_yungle(raw_body: bytes, header: str, secret: str, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    t = int(parts.get("t", "0"))
+    if abs(time.time() - t) > tolerance:
+        return False
+    expected = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, parts.get("v1", ""))
+```
+
+</CodeGroup>
+
+<Note>
+Parse the JSON *after* verifying, from the exact bytes received. Re-serialising a parsed body changes whitespace and key order, and the signature no longer matches.
+</Note>
+
+## Pull instead of push
+
+An endpoint with no URL keeps its events for 30 days, and you read them when you like: from a cron job, from a machine behind a firewall, or anywhere a public URL is more trouble than it is worth. Reading consumes nothing, so keep your own cursor.
+
+```bash
+# Keep the last cursor you saw; start with none.
+curl -s "https://yungle.co/api/v1/webhooks/$ENDPOINT/events?cursor=$CURSOR" \
+  -H "Authorization: Bearer $YUNGLE_API_KEY"
+# → { "events": [ { "deliveryId": "…", "id": "evt_…", "type": "transfer.downloaded", … } ],
+#     "nextCursor": "v1.…", "hasMore": false }
+```
+
+`nextCursor` comes back even when there is nothing new, so a poller always has somewhere to resume from. `yungle webhooks listen` does exactly this, and can forward each event, signed, to a server on your machine while you build the receiver.
+
+## What a webhook can reach
+
+Only the public internet. The URL must be https, and every delivery resolves the host and refuses private, loopback, link-local and reserved addresses in the same step that connects, so a hostname cannot pass the check and then point somewhere else. Redirects are not followed.

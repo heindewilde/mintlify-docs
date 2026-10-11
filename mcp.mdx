@@ -1,0 +1,75 @@
+---
+title: "MCP server"
+description: "Connect Claude, Cursor or Windsurf to Yungle with one sign-in: its tools, what each answers, and why it emails no one without your consent."
+---
+
+import McpTools from '/snippets/generated/mcp-tools.mdx';
+import { mcpClientLabels } from '/snippets/generated/mcp-values.mdx';
+
+The Yungle MCP server lets an AI assistant answer questions about your files (what did I send, has the client downloaded it, what is in this collection) and, if you allow it, share files as a link. It never deletes, revokes or invites, and it emails someone only when you have allowed that and confirm each send.
+
+## Connect, with no key
+
+**In Claude:** Yungle is in Claude’s connector directory. [Add Yungle to Claude](https://claude.ai/directory/yungle) and sign in.
+
+**Anywhere else:** add `https://yungle.co/mcp` as a remote MCP server (a URL in Cursor, VS Code and others). Your client opens Yungle, you sign in and choose what it may do, and that is all: no key to create or paste.
+
+```json
+{
+  "mcpServers": {
+    "yungle": { "url": "https://yungle.co/mcp" }
+  }
+}
+```
+
+The consent screen names the app and where it will send you, and lists each permission in plain words. **Emailing recipients is off unless you tick it**, even when the app asks. Disconnect any app in Settings → API keys, under Connected apps. It works on every plan; sharing links is part of the free plan.
+
+## Or run it locally
+
+The same server over stdio, with an API key: the hosted server above is simpler, but a local one can also share files straight from your disk. The quickest way is the CLI, which saves your key and writes the configuration for you:
+
+```bash
+npm install -g yungle-cli
+yungle login --key       # paste a key from Settings → API keys
+yungle mcp install --client claude-desktop   # or: claude-code, cursor, windsurf
+yungle mcp status
+```
+
+Give the assistant its own key, with as little as it needs: the `:read` scopes to answer questions, plus `transfers:write` if it should share links. A key sitting in a config file should be worth as little as possible to whoever finds it. Add `--dry-run` to see the change first.
+
+Or add it by hand, to any MCP client that runs stdio servers:
+
+```json
+{
+  "mcpServers": {
+    "yungle": {
+      "command": "npx",
+      "args": ["-y", "yungle-mcp"],
+      "env": { "YUNGLE_API_KEY": "yk_live_…" }
+    }
+  }
+}
+```
+
+Supported by `mcp install`: {mcpClientLabels}.
+
+## Tools
+
+<McpTools />
+
+## What it cannot do
+
+- **Email anyone without you.** `send_transfer` only exists when you allowed emailing, and every send asks you first, in your client, with the addresses and note in front of you. A client that cannot ask gets the link to hand over instead; Yungle sends nothing.
+- **Delete, revoke or invite.** No tool does any of these, so an assistant that misreads an instruction cannot take a link away from a client.
+- **Read file contents.** It sees names, sizes, types and receipts, never what is inside a file.
+- **Open your vault.** The vault is never listed, and its key is derived in your browser, so no server can read it.
+
+<Note>
+Filenames, titles and messages come from people outside your control. The server marks them as untrusted data for the model, so a filename that reads like an instruction is treated as text, not obeyed.
+</Note>
+
+## See also
+
+- [Agent hand-off over MCP](/recipes/agent-hand-off) — a worked example.
+- [File transfer for AI agents](/guides/file-transfer-for-ai-agents)
+- Source: [yungle-mcp on GitHub](https://github.com/heindewilde/yungle-clients/tree/main/packages/mcp-server), MIT licensed.

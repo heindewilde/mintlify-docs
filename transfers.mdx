@@ -1,0 +1,142 @@
+---
+title: "Transfers"
+description: "Create a transfer, upload the files, send it, and read download receipts per recipient — all from the Yungle API."
+---
+
+A transfer is a one-off send: files behind a link that expires. Create it, upload, send it, then watch who collects it.
+
+## Create is not send
+
+`POST /transfers` always creates a **draft**. The link is not live and nobody is emailed until you call finalize. That is the only honest ordering: the alternative is either mailing a link to files that have not arrived, or holding a request open for the length of an upload.
+
+A draft you never finalize is swept after 24 hours, so an abandoned script leaves nothing behind.
+
+## Endpoints
+
+### POST /transfers
+
+Registers files and returns upload targets. `title` is for your dashboard and is never shown to recipients.
+
+Transfers live 7 days unless you say otherwise. Pass `expiresInDays` to set a different lifetime — it is clamped to your plan's maximum (7 free, 90 paid) rather than rejected.
+
+### GET /transfers
+
+Your transfers, newest first: 100 per page by default, up to 500 with `limit`. When `nextCursor` is not null, pass it back as `cursor` for the next page. It is opaque, so never build one yourself.
+
+### POST /transfers/\{id\}/finalize
+
+Makes the link live and emails `recipients`. Omit them for a link-only transfer you share yourself — that is the default, and it spends none of your email budget.
+
+Safe to retry: finalizing twice does not re-send, and recipients already notified are not notified again. If a response is lost, repeat the call.
+
+### GET /transfers/\{id\}
+
+The transfer, its ready files with scan verdicts, and per-recipient status.
+
+### GET /transfers/\{id\}/downloads
+
+Download receipts. See the note about counting below.
+
+### POST /transfers/\{id\}/files
+
+Add more files, **before** finalizing. Once a transfer is sent its contents are fixed and this returns `410 not_editable` — a delivery that changes shape after the recipient was told it was ready is a bad surprise for them and an invisible one for you.
+
+### DELETE /transfers/\{id\}/files/\{fileId\}
+
+Remove one, also only before finalizing.
+
+### PATCH /transfers/\{id\}
+
+Change `expiresInDays` or `maxDownloads`. Expiry is clamped to your plan's maximum rather than rejected, so asking for 365 gets you the longest you may have.
+
+### DELETE /transfers/\{id\}
+
+Revoke. Immediate and irreversible — the per-file encryption keys are destroyed before the response returns, so the content is unrecoverable whether or not object storage has caught up. Links already sent stop working.
+
+## Counting downloads
+
+<Note>
+One page visit is one download, **not** one per file. A recipient who opens the link and saves eight files produces eight rows sharing one `sessionId`. Count distinct sessions, or a single visitor looks like eight.
+</Note>
+
+`totalDownloads` on the response is the authoritative count and is what `maxDownloads` is enforced against. The event list is capped at the 200 most recent.
+
+## Full example
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://yungle.co/api/v1/transfers \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Rushes — Tuesday","files":[{"name":"a001.mov","size":4200000000,"path":"Day 1"}]}'
+
+# …stream to tusEndpoint using files[0].uploadToken…
+
+curl -X POST https://yungle.co/api/v1/transfers/01J…/finalize \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"recipients":["editor@example.com"]}'
+```
+
+```javascript JavaScript
+const auth = { Authorization: `Bearer ${process.env.YUNGLE_API_KEY}`,
+               'Content-Type': 'application/json' };
+
+const created = await fetch('https://yungle.co/api/v1/transfers', {
+  method: 'POST',
+  headers: auth,
+  body: JSON.stringify({
+    title: 'Rushes — Tuesday',
+    files: [{ name: 'a001.mov', size: 4_200_000_000, path: 'Day 1' }],
+  }),
+}).then((r) => r.json());
+
+// …stream to created.tusEndpoint using created.files[0].uploadToken…
+
+const sent = await fetch(
+  `https://yungle.co/api/v1/transfers/${created.transfer.id}/finalize`,
+  {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ recipients: ['editor@example.com'] }),
+  },
+).then((r) => r.json());
+
+console.log(sent.transfer.url); // give this to anyone else
+```
+
+```python Python
+import os, requests
+
+API = "https://yungle.co/api/v1"
+AUTH = {"Authorization": f"Bearer {os.environ['YUNGLE_API_KEY']}"}
+
+created = requests.post(f"{API}/transfers", headers=AUTH, json={
+    "title": "Rushes — Tuesday",
+    "files": [{"name": "a001.mov", "size": 4_200_000_000, "path": "Day 1"}],
+}).json()
+
+# …stream to created["tusEndpoint"] — see the Send from Python recipe…
+
+sent = requests.post(
+    f"{API}/transfers/{created['transfer']['id']}/finalize",
+    headers=AUTH,
+    json={"recipients": ["editor@example.com"]},
+).json()
+
+print(sent["transfer"]["url"])  # give this to anyone else
+```
+
+```bash CLI
+# Registers, uploads (resumably), sends, prints the link.
+yungle send ./a001.mov --to editor@example.com --title "Rushes — Tuesday"
+```
+
+</CodeGroup>
+
+## Size limits
+
+One transfer may total up to your plan's storage quota. Transfer bytes are not metered against collection storage — the quota is used here as a per-transfer ceiling, not a balance you spend. Exceeding it returns `413 transfer_too_large` with the limit in the response, before anything is uploaded.
+
+Recipients are capped at 10 per transfer. See [Rate & email limits](/limits).

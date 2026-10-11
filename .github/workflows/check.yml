@@ -1,0 +1,26 @@
+name: check
+
+# Mintlify's own CI checks are a Pro feature, so the docs check themselves.
+# The generated snippets are checked from the other side: the app repo's CI
+# regenerates them and fails if this repo's copy differs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i -g mint
+      - name: Copy guard
+        run: node scripts/copy-guard.mjs
+      - name: Validate (strict build, OpenAPI included)
+        run: mint validate
+      - name: Broken links
+        run: mint broken-links --check-anchors

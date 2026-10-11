@@ -1,0 +1,68 @@
+---
+title: "Downloading files"
+description: "Signed, resumable download URLs for your own transfers and collections, and for links shared with you — no key needed to fetch the bytes."
+---
+
+Bytes come out the way they go in: not through the JSON API. You ask for download links and
+get signed URLs — one per file, and a ZIP when there is more than one — that need no key.
+Hand them to `curl`, a queue worker or an agent. Each one supports `Range`, so a
+dropped 100 GB download continues where it stopped.
+
+## Your own transfers and collections
+
+### GET /transfers/\{id\}/download-links
+
+### GET /collections/\{id\}/download-links
+
+Fetching your own files is not a recipient download: it never shows up in download receipts
+or `transfer.downloaded` webhooks. Collections list up to 10,000 files, each with its
+folder `path`.
+
+## A link someone shared with you
+
+### POST /links/resolve
+
+```bash
+curl https://yungle.co/api/v1/links/resolve \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{ "url": "https://yungle.co/t/k3v9…", "password": "optional" }'
+```
+
+Works for transfer links (`/t/…`) and collection links (`/c/…`), with any key,
+free ones included. You get exactly what a person opening the link in a browser could
+download, under the same rules:
+
+- A password-protected link needs `password`. Missing is `password_required`, wrong is `wrong_password`, and attempts share the same budget as the page.
+- One call is one download of a transfer: it appears in the sender's receipts, and it counts against a download limit.
+- A collection shared with invited guests only answers `guests_only`. A guest opens it in a browser, signed in.
+- While a transfer is still uploading, `complete` is `false` and `files` lists what has arrived. Ask again later for the rest.
+- An end-to-end encrypted transfer comes back with `e2ee: true`. Its bytes are ciphertext, and the key is in the `#` part of the link, which we never see.
+
+## The response
+
+```json
+{
+  "kind": "transfer",
+  "title": null,
+  "message": "Final cut, as discussed.",
+  "expiresAt": "2026-10-06T09:00:00.000Z",
+  "e2ee": false,
+  "complete": true,
+  "zipUrl": "https://yungle.co/dl/transfer/01JABC…?token=…",
+  "urlsExpireAt": "2026-09-30T09:00:00.000Z",
+  "files": [
+    { "id": "01JABD…", "name": "final-cut.mov", "size": 8123456789,
+      "mimeType": "video/quicktime", "path": "Exports",
+      "downloadUrl": "https://yungle.co/dl/01JABD…?token=…" }
+  ]
+}
+```
+
+The URLs work for 24 hours (`urlsExpireAt`). A download already running is not cut off
+when they expire, but resuming it after that needs fresh ones, so call the endpoint again.
+
+<Note>
+  From a terminal, `yungle get <link>` does all of this, resumably, with no key for
+  a link. The MCP server exposes it to agents as `get_download_links`.
+</Note>

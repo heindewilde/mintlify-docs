@@ -1,0 +1,52 @@
+---
+title: "Authentication"
+description: "How to authenticate with the Yungle API: bearer API keys, the six available scopes, and what each failure status means."
+---
+
+One credential: an API key, sent as a bearer token on every request.
+
+## Sending the key
+
+```http
+Authorization: Bearer yk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Keys are created in [Settings → API keys](https://yungle.co/dashboard/settings/api). The full value is shown once, at creation. We store only a keyed hash, so we genuinely cannot show it again or recover it for you — if it is lost, revoke it and make another.
+
+## What a key is
+
+- A key belongs to **one workspace**, chosen when it is created, and can never be switched to another. It acts as that workspace: uploads count against its storage, sends spend its plan.
+- Only the workspace **owner** can create or revoke keys. A key outlives the session that made it, so letting a member mint one would create a credential for an account they can be removed from.
+- Revocation is **immediate**. The key is checked on every request, so nothing is cached and no session can outlive it.
+- A key's *write* access stops the moment the workspace's subscription lapses, and resumes when it does. Reads keep working either way. Nothing needs re-issuing.
+
+## Scopes
+
+Pick the narrowest set that does the job. A `:write` scope also grants read of the same resource — every write endpoint returns what it changed, so pretending otherwise would be a boundary that does not hold. Scopes never leak across resources.
+
+| Scope | Grants |
+| --- | --- |
+| `transfers:read` | List transfers, read detail and download receipts. |
+| `transfers:write` | Create, upload to, send, amend and revoke transfers. |
+| `collections:read` | List collections, files, folders and guests. |
+| `collections:write` | Create collections, upload files, manage folders and guests. |
+| `contacts:read` | Read the address book. |
+| `contacts:write` | Add, edit and remove contacts. |
+
+<Note>
+`GET /api/v1/me` works with **any** key holding at least one scope — it describes the key itself, so needing a particular resource scope to ask “what am I allowed to do?” would be backwards. A key with no scopes at all is still refused.
+</Note>
+
+There is no scope for billing, plan changes, workspace members or account deletion, and there will not be one. Those act on a person's own account rather than on a workspace, and a machine credential has no business reaching them.
+
+## Failures
+
+| Status | Means |
+| --- | --- |
+| `401` | Missing, malformed, unknown, revoked or expired key — deliberately indistinguishable, so a stolen key reveals nothing about which. |
+| `402` | An endpoint the free plan does not include. Transfers and contacts are on the free plan; collections come with Leaf or Tree. |
+| `403` | The key is valid but lacks the scope this endpoint needs. The response names it. |
+
+<Note>
+Treat a key like a password: environment variables or a secrets manager, never a repository. If one leaks, revoke it first and investigate second — revocation takes effect on the next request.
+</Note>

@@ -1,72 +1,122 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Yungle",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2E8B57",
+    "light": "#3EA76A",
+    "dark": "#2E8B57"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
+  "background": {
+    "color": {
+      "light": "#F4F7F2",
+      "dark": "#121B25"
     }
   },
+  "favicon": "/favicon.svg",
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/logo/yungle.png",
+    "dark": "/logo/yungle.png",
+    "href": "https://yungle.co"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": ["index", "quickstart", "authentication"]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/send-large-files-from-the-command-line",
+              "guides/file-transfer-for-ai-agents",
+              "guides/wetransfer-alternative-with-an-api"
+            ]
+          },
+          {
+            "group": "Recipes",
+            "pages": [
+              "recipes/ci-artefacts",
+              "recipes/nightly-report",
+              "recipes/python",
+              "recipes/client-collection",
+              "recipes/agent-hand-off",
+              "recipes/slack-on-download"
+            ]
+          },
+          {
+            "group": "Working with the API",
+            "pages": [
+              "uploads",
+              "downloads",
+              "transfers",
+              "collections",
+              "contacts",
+              "webhooks",
+              "errors",
+              "limits",
+              "unsupported"
+            ]
+          },
+          {
+            "group": "Tools",
+            "pages": ["cli", "mcp"]
+          },
+          {
+            "group": "Updates",
+            "pages": ["changelog"]
+          }
+        ]
+      },
+      {
+        "tab": "API reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["api-reference/index"]
+          }
+        ],
+        "openapi": "https://yungle.co/api/v1/openapi.json"
+      }
+    ]
   },
   "navbar": {
     "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@mintlify.com"
-      }
+      { "label": "Pricing", "href": "https://yungle.co/pricing" },
+      { "type": "github", "href": "https://github.com/heindewilde/yungle-clients" }
     ],
     "primary": {
       "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "label": "Get an API key",
+      "href": "https://yungle.co/dashboard/settings/api"
     }
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
+    "options": ["copy", "view", "claude", "chatgpt", "mcp", "cursor", "vscode", "download-spec"]
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://docs.yungle.co"
+    }
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+      "github": "https://github.com/heindewilde/yungle-clients",
+      "website": "https://yungle.co"
+    },
+    "links": [
+      {
+        "header": "Yungle",
+        "items": [
+          { "label": "Home", "href": "https://yungle.co" },
+          { "label": "Pricing", "href": "https://yungle.co/pricing" },
+          { "label": "Security", "href": "https://yungle.co/security" },
+          { "label": "Contact", "href": "https://yungle.co/contact" }
+        ]
+      }
+    ]
   }
 }

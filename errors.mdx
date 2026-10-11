@@ -1,0 +1,42 @@
+---
+title: "Errors"
+description: "Every error code the Yungle API returns, what status it carries, and which ones are worth retrying."
+---
+
+import ErrorCodes from '/snippets/generated/error-codes.mdx';
+
+Every failure has the same shape, and a stable `code` worth branching on. The `message` is written for a human reading a log and may change; the code will not.
+
+## Shape
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "This upload would exceed your storage quota.",
+    "details": { "usedBytes": 107374182400, "quotaBytes": 107374182400 },
+    "docs": "https://docs.yungle.co/errors#quota_exceeded"
+  }
+}
+```
+
+`details` is present only when there is something actionable in it, and its contents vary by code — treat it as advisory. `docs` links to the row below that explains the code. A path under `/api` that is not an endpoint answers the same way, with `404 not_found`, so a client never has to parse an HTML error page.
+
+## Codes
+
+<ErrorCodes />
+
+## Retrying
+
+Retry `429` after the interval and `500` with backoff. Do not retry any other 4xx — they are deterministic and the same request will fail identically.
+
+Writes are safe to retry when a response is lost. Finalizing a transfer twice does not re-send it, and registering the same folder path twice lands in the folder that already exists. The one exception is creating a transfer, which makes a new draft each time — drafts you abandon are swept after 24 hours, so the cost of a duplicate is nothing.
+
+To make any `POST` safe to retry, send an `Idempotency-Key` header with a fresh UUID per logical request and the same UUID on every retry of it. Within 24 hours, a retry gets the original success back, byte for byte, with `Idempotent-Replayed: true`, and nothing is created twice. Only successes are remembered: a request that failed can be retried with the same key and runs again.
+
+- `409` with `details.reason` `idempotency_key_reused`: that key was already used for a different request. Keys are per request, never per session.
+- `409` with `details.reason` `idempotency_in_progress`: the first attempt is still running. Retry after `Retry-After` to get its result.
+
+## A note on 404
+
+A resource that exists but belongs to another workspace returns `404`, not `403`. A 403 would confirm the id is real, which turns any endpoint into a way of finding out what other people's ids are. You cannot tell the two apart, and that is intended.

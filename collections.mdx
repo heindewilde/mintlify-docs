@@ -1,0 +1,82 @@
+---
+title: "Collections"
+description: "Create collections, upload folders with their structure intact, and invite clients as guests, using the Yungle API."
+---
+
+A collection is a durable, folder-structured place you invite people into — the other half of the product from transfers, which are one-off sends that expire.
+
+## Links and who gets in
+
+The link says *where*; the collection's visibility says *who*. Every collection gets a secret link at creation — 128 bits, checked on every request — which is returned as `url`. Holding it never overrides a collection set to “only guests I invite”.
+
+If your workspace has a custom domain connected, a collection can also be reached at `yourdomain.com/<slug>`. That stays **off** for collections created through the API. Readable means guessable, and switching it on is a decision worth making in the dashboard where the warning sits next to the control.
+
+## Endpoints
+
+### GET /collections
+
+Summaries, most recently updated first. Never includes your vault.
+
+### POST /collections
+
+Creates one and returns its secret link. The URL slug comes from the title and is unique within your workspace.
+
+### GET /collections/\{id\}
+
+Detail, with file count and total size.
+
+### PATCH /collections/\{id\}
+
+Title and description only. Renaming never changes the URL — it has already been sent to people.
+
+### DELETE /collections/\{id\}
+
+Deletes the collection and everything in it. No undo, no trash.
+
+### GET POST DELETE /collections/\{id\}/files
+
+List, register for upload, or delete in bulk. `?folderId=root` lists the top level only; `?folderId=<id>` lists one folder; omitting it lists everything. Listing returns every file unless you pass `limit` (up to 1000). Then follow `nextCursor` the same way as for transfers.
+
+### GET POST /collections/\{id\}/folders
+
+List or create folders.
+
+### GET POST /collections/\{id\}/guests
+
+List or invite guests. Up to 25 addresses per call.
+
+### DELETE /collections/\{id\}/guests/\{guestId\}
+
+Remove a guest's access, including any invite they have not yet accepted.
+
+## Folders
+
+You rarely need to create folders explicitly. Send a `path` with each file and the tree is built for you, in one transaction, idempotently — uploading the same shoot folder twice lands in what already exists rather than making a parallel copy.
+
+```javascript
+await fetch(`https://yungle.co/api/v1/collections/${id}/files`, {
+  method: 'POST',
+  headers: auth,
+  body: JSON.stringify({
+    files: [
+      { name: 'IMG_0001.cr3', size: 32_000_000, path: 'Ceremony/Raw' },
+      { name: 'IMG_0002.cr3', size: 31_500_000, path: 'Ceremony/Raw' },
+      { name: 'cover.jpg',    size:  2_100_000 },
+    ],
+  }),
+});
+```
+
+<Note>
+The folder list is ordered by depth then path, which is **not** a pre-order traversal — it interleaves subtrees with their siblings'. Build a tree from `parentId` rather than rendering the order you receive. Each row also carries a materialized `path`, so you never need to resolve one yourself.
+</Note>
+
+## Guests are not members
+
+- A **guest** is invited to one collection, can view and download it, and nothing else. Free and unlimited on every plan.
+- A **workspace member** acts across the whole account. Different concept, paid per seat, and deliberately not manageable from the API.
+- Removing a guest revokes access immediately and burns any invite still sitting in their inbox.
+
+## Storage quota
+
+Collection uploads reserve quota before they start, counting files already stored plus uploads in flight. If a batch would not fit you get `413 quota_exceeded` with `usedBytes` and `quotaBytes`, and nothing is created — no half-built folder tree, no orphaned rows.

@@ -1,0 +1,42 @@
+---
+title: "CLI reference"
+description: "Every yungle command and flag: send files from a terminal, push folders into collections, list and revoke transfers, and connect an AI assistant."
+---
+
+import CliCommands from '/snippets/generated/cli-commands.mdx';
+
+`yungle` sends files and folders from a terminal, a script or a build server, and resumes an interrupted upload when you run the same command again. Every command takes `--json`, so the same tool serves a person and a pipeline.
+
+## Install and sign in
+
+```bash
+npm install -g yungle-cli     # or: brew install heindewilde/yungle/yungle
+yungle login           # opens your browser to sign in
+```
+
+`yungle login` signs you in through the browser, so there is nothing to copy. That session makes links but never emails anyone: a sign-in code can be phished, so it cannot make Yungle mail strangers. To email recipients with `--to`, and on a build server, create a key in Settings → API keys and use `yungle login --key` or set it as `YUNGLE_API_KEY`; the environment variable is read first and no login is needed.
+
+## Commands
+
+<CliCommands />
+
+## Scripting it
+
+With `--json`, the result is one JSON object on stdout. Progress and diagnostics go to stderr, so a pipe into `jq` stays clean:
+
+```bash
+URL=$(yungle send ./render.mp4 --json | jq -r .url)
+echo "Ready: $URL"
+```
+
+`send --json` prints `id`, `url`, `expiresAt` and `notified` (the addresses that were emailed). `push --json` prints the `collection` id, the number `uploaded` and the collection’s `url`.
+
+<Note>
+The CLI cannot reach your vault or send end-to-end encrypted transfers: both need a key derived in your browser, which by design never reaches Yungle.
+</Note>
+
+## See also
+
+- [Send large files from the command line](/guides/send-large-files-from-the-command-line)
+- [CI artefacts to a client](/recipes/ci-artefacts) and [a nightly report hand-off](/recipes/nightly-report)
+- Source: [yungle-cli on GitHub](https://github.com/heindewilde/yungle-clients/tree/main/apps/cli), MIT licensed.

@@ -1,0 +1,44 @@
+---
+title: "What the API cannot do"
+sidebarTitle: "What it cannot do"
+description: "The limits of the Yungle API, separating deliberate omissions from what is genuinely impossible — including why the vault can never be reachable."
+---
+
+Worth knowing before you design around it. Some of this is a decision we could revisit; some of it is not possible at all, and the difference matters.
+
+## Not possible: the vault
+
+Your vault is encrypted with a master key derived in your browser from a passphrase that never reaches our servers. There is no server-side path to that plaintext — not for the API, not for previews, not for us.
+
+So a vault collection is not merely hidden from the API; it returns `404` like any resource that is not yours, and always will. An API that could read your vault would mean the vault did not work.
+
+<Note>
+A local client *can* reach it, because a local client is where the key can be derived. Vault support in the Yungle CLI is not built yet.
+</Note>
+
+## Not possible: end-to-end encrypted transfers
+
+Same reason. An E2E transfer's key lives in the fragment of its share link and is never sent to us, so we hold ciphertext we cannot open. You can create one in the browser; the API cannot create one, and refuses to finalize one — sending it by email would mean emailing the key, which is the one thing the feature exists to prevent.
+
+## Deliberate: billing, plans and members
+
+There are no endpoints for subscriptions, payment methods, invoices, add-ons, workspace members or account deletion, and no scope that could grant them.
+
+Those act on a **person's own account** rather than on a workspace, which is the boundary the whole product is built around: a member managing someone else's collections must never thereby be able to touch their card. A machine credential sits on the same side of that line.
+
+## Deliberate: sharing settings
+
+A collection's visibility, password and readable alias are not writable through the API. Each of them is a decision about who can reach a client's photographs, and the dashboard is where the consequence is written next to the control. Creating and filling collections is automation; deciding who gets in is not.
+
+## Not yet: browser-side use
+
+The API is server-to-server. There are no CORS headers for third-party origins and keys must not be shipped to a browser — a key acts as your whole workspace, and anything in front-end code is public.
+
+If you need a browser to upload, do it the way our own app does: your server registers the files and hands the browser the short-lived, single-file upload tokens.
+
+## Other gaps
+
+- Pagination covers the two lists that grow without bound, transfers and collection files. Download receipts are capped at the 200 most recent events; contacts, collections, folders and guests always come back complete.
+- No bulk contact import — create them one at a time; the rate limit is generous.
+- No search. Fetch and filter client-side.
+- No sandbox or test mode. Keys are named yk_live_ so there is room for one later.

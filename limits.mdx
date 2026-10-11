@@ -1,0 +1,58 @@
+---
+title: "Rate & email limits"
+description: "Request limits, daily ceilings and the outbound email budget on the Yungle API, and how to stay under them."
+---
+
+Two separate budgets: how often you may call, and how many strangers we will email on your behalf. The second is the one worth reading properly.
+
+## Request limits
+
+| Bucket | Paid plan | Free plan |
+| --- | --- | --- |
+| Per key | 120 requests per minute | 12 per minute |
+| Per workspace, per day | 20,000 requests | 1,000 requests |
+
+Every account can use the API. Transfers, contacts and webhooks work on the free plan; collections need a paid one, and a collection write attempted without it returns `402 upgrade_required` rather than failing halfway through.
+
+Exceeding either returns `429 rate_limited` with a `Retry-After` header in seconds. The per-key bucket means one noisy integration cannot starve another in the same workspace; the per-workspace one means adding keys does not multiply your reach.
+
+Every response past authentication says where you stand, in the IETF draft `RateLimit` header fields — one entry per bucket, so throttle on whichever is closer to empty:
+
+```http
+RateLimit-Policy: "key";q=120;w=60, "workspace";q=20000;w=86400
+RateLimit: "key";r=87;t=34, "workspace";r=19880;t=40211
+```
+
+`q` is the quota and `w` the window, in seconds; `r` is what is left and `t` the seconds until that window resets. Requests without a valid key are counted per address instead — 60 a minute, reported as an `"ip"` bucket — and a valid key never touches that one.
+
+## Email limits, and why they are low
+
+Sending a transfer to named recipients makes Yungle email people from our authenticated domain, carrying your text. That capability is worth defending — for you as much as for us, since a domain that gets used for spam stops being delivered to anyone.
+
+| Budget | Limit |
+| --- | --- |
+| Recipients per transfer | 10 |
+| Recipients emailed per workspace per day | 150 |
+| Collection guest invites | 25 per call, with hourly and daily workspace budgets |
+
+These are counted in **addresses**, not requests — five transfers to ten people each is the same outbound volume as fifty transfers to one, and is charged the same.
+
+<Note>
+Exhausting the daily budget returns `429 email_budget_exhausted`. The transfer is still created and its link still works — only the emailing was refused, so you can share the URL yourself and lose nothing.
+</Note>
+
+## Staying under them
+
+- **Default to link-only.** Omit `recipients` when finalizing and hand the returned `url` to whatever already talks to your client — a project tool, a chat channel, your own email. It costs nothing from the budget and usually arrives somewhere they are already looking.
+- **One transfer, many recipients** beats one transfer each: it is the same email budget but far fewer requests, and everyone sees the same link.
+- **Poll politely.** Download receipts change when a human clicks something. Once a minute is plenty; once a second buys you nothing but a 429.
+
+## Size and count ceilings
+
+| Thing | Limit |
+| --- | --- |
+| Files per registration call | 500 |
+| One transfer | Your plan's storage quota, as a ceiling |
+| Collection storage | Your plan's quota, reserved before upload |
+| Folder depth | 10 |
+| Download events returned | 200 most recent |

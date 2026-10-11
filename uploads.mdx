@@ -1,0 +1,142 @@
+---
+title: "Uploading files"
+description: "How to upload to Yungle with resumable tus uploads — so a dropped connection continues from the last committed part instead of starting again."
+---
+
+File bytes do not travel through the JSON API. Endpoints that accept files return a
+`tusEndpoint` and one `uploadToken` per file, and you stream to that — over
+[tus](https://tus.io), a resumable upload protocol with client libraries in most languages.
+
+## Why not a plain POST
+
+The point of the whole pipeline is that a 100 GB upload survives a dropped connection. Each
+part is encrypted and committed as it arrives, and the server remembers the offset — so a
+reconnect continues from the last committed part instead of starting again. A single POST
+gives you none of that, and a laptop lid closing costs you the whole file.
+
+## The flow
+
+Register the files, upload each one, then use them. The registration response looks like
+this:
+
+```json
+{
+  "tusEndpoint": "https://yungle.co/files",
+  "files": [
+    { "id": "01JABC…", "name": "final-cut.mov", "size": 8123456789,
+      "uploadToken": "eyJzY29wZ…",
+      "uploadTokenExpiresAt": "2026-10-01T14:00:00.000Z" }
+  ]
+}
+```
+
+Point a tus client at `tusEndpoint` with these settings:
+
+```javascript
+import * as tus from 'tus-js-client';
+
+const upload = new tus.Upload(stream, {
+  endpoint: tusEndpoint,
+  uploadSize: file.size,
+  // The token authorizes EVERY request, not only the creation POST —
+  // HEAD, PATCH and DELETE are verified too. Metadata below reaches the
+  // server only on the first POST, so it cannot carry the token alone.
+  headers: { 'x-yungle-upload-token': file.uploadToken },
+  metadata: {
+    fileId: file.id,
+    token: file.uploadToken,
+    filename: file.name,
+  },
+  retryDelays: [0, 1000, 3000, 5000, 10000],
+});
+upload.start();
+```
+
+## Uploads longer than two hours
+
+An upload token lasts two hours, and every tus request presents one — so a chunked client
+fails at its first PATCH after that, and any upload fails if it has to resume after it. To
+keep going, trade the token for a fresh one before it expires. Halfway through its life is a
+good moment; renewing more often is harmless.
+
+```http
+POST https://yungle.co/api/uploads/token
+x-yungle-upload-token: <current token>
+
+→ 200 { "fileId": "01JABC…", "uploadToken": "eyJ…", "expiresAt": "…" }
+```
+
+Use the new token on every request from then on. With tus-js-client that means reading it
+at request time rather than fixing it in `headers`:
+
+```javascript
+let token = file.uploadToken;
+const timer = setInterval(async () => {
+  const res = await fetch('https://yungle.co/api/uploads/token', {
+    method: 'POST',
+    headers: { 'x-yungle-upload-token': token },
+  });
+  if (res.ok) token = (await res.json()).uploadToken;
+}, 45 * 60 * 1000);
+
+const upload = new tus.Upload(stream, {
+  // …as above, plus:
+  onBeforeRequest: (req) => req.setHeader('x-yungle-upload-token', token),
+  onSuccess: () => clearInterval(timer),
+});
+```
+
+A renewal is also how Yungle knows the upload is alive: its quota stays reserved and
+recipients keep seeing that files are still arriving. `401` means the token is expired
+or invalid, and `404` that the upload has finished or was cancelled; neither is worth
+retrying. The CLI, the Python SDK and the web app all renew on their own.
+
+## Importing from a URL
+
+When the file is already online — a presigned S3 or GCS link, a CDN, a release asset — let
+Yungle fetch it. Put it in `imports` alongside, or in place of, `files` on
+`POST /transfers`, `POST /transfers/{id}/files` or
+`POST /collections/{id}/files`. The bytes go from the source to us without passing
+through you, which is how a serverless function or an AI agent in a chat can move a 50 GB
+file.
+
+```http
+POST /api/v1/transfers
+{ "imports": [ { "url": "https://my-bucket.s3.eu-central-1.amazonaws.com/render.mov?X-Amz-Signature=…",
+                 "name": "Final render.mov" } ] }
+
+→ 201 { "transfer": { "id": "01JABC…", … }, "files": [],
+        "imports": [ { "fileId": "01JABD…", "name": "Final render.mov", "size": 48213766144,
+                       "source": "my-bucket.s3.eu-central-1.amazonaws.com", "status": "queued" } ] }
+```
+
+- The source must say how big the file is — `Content-Length` on a HEAD, or a `Range` answer — and must be reachable from the public internet. Private and reserved addresses are refused, after every redirect.
+- An import counts exactly like an upload: the same quota, size ceilings, virus scan and API metering.
+- Follow one with `GET /imports/{fileId}`: `importing` with `receivedBytes`, then `ready` or `failed` with the reason. A dropped source is retried and resumes where it stopped.
+- You can finalize straight away. The link works at once and shows files as they arrive; recipients are emailed when the last one lands, as with a slow upload.
+- Up to 20 per call, and 5 in progress at once per workspace on the free plan (50 on a paid one).
+
+## Rules that will bite you
+
+- **Send `x-yungle-upload-token` on every request**, not just the creation POST. HEAD, PATCH and DELETE are all authorized. A client that only sets it once gets a 401 partway through an otherwise working upload.
+- **`size` must be exact.** It is what the quota reservation and the truncation guard compare against. A size that does not match the bytes you send fails the upload rather than silently storing a partial file.
+- **Upload tokens last two hours, and can be renewed.** Renew before expiry (above) and an upload can run as long as it needs. An expired token cannot be renewed — if you register files and come back tomorrow, register them again.
+- **To resume, HEAD the upload URL** your tus client stored and continue from the offset it returns. Do not re-POST an upload that is already in progress — that starts a new one with a fresh encryption key and abandons what you sent.
+
+## After the bytes land
+
+Each file is scanned for malware once it lands. `GET /transfers/{id}`
+reports `scanResult` per file: `null` while it is pending, then `clean`,
+`infected`, or `unscanned` when the scanner could not inspect it (very large
+files). An infected file has its encryption key destroyed immediately, so it cannot be
+downloaded by anyone including you.
+
+You do not have to wait for the scan before calling `finalize` — recipients are only
+emailed once every file has finished uploading, and the download path checks the verdict
+independently.
+
+<Note>
+  Folder structure is preserved by the `path` field on each file, e.g.
+  `"Ceremony/Raw"`. In a collection that builds real folders you can navigate and rename.
+  In a transfer it is kept for the recipient's ZIP, which is the only place it needs to exist.
+</Note>

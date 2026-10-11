@@ -1,0 +1,85 @@
+---
+title: "Tell Slack when a client downloads"
+sidebarTitle: "Slack when a client downloads"
+description: "A signed Yungle webhook to a Slack message the moment a client downloads their files: a forty-line Node receiver, tested locally with yungle webhooks listen."
+---
+
+A message in your team channel the moment a client picks up their files, with no polling. One
+small server receives the Yungle webhook, checks its signature, and posts to Slack. About forty
+lines, no dependencies.
+
+## 1. Add the endpoint
+
+In [Settings → Webhooks](https://yungle.co/dashboard/settings/webhooks),
+add your server’s public https URL and tick `transfer.downloaded`. Copy the signing
+secret it shows once. Webhooks are on the free plan (one endpoint).
+
+## 2. The receiver
+
+```javascript
+// slack-on-download.mjs: node slack-on-download.mjs
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
+
+const SECRET = process.env.YUNGLE_WEBHOOK_SECRET; // whsec_…
+const SLACK = process.env.SLACK_WEBHOOK_URL;       // a Slack incoming webhook
+
+function verified(body, header) {
+  const parts = Object.fromEntries((header ?? '').split(',').map((p) => p.split('=')));
+  const t = Number(parts.t);
+  if (!t || Math.abs(Date.now() / 1000 - t) > 300) return false;
+  const expected = createHmac('sha256', SECRET).update(`${t}.${body}`).digest();
+  const given = Buffer.from(parts.v1 ?? '', 'hex');
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+const seen = new Set(); // events can arrive twice; the id is stable
+
+createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => (body += c));
+  req.on('end', async () => {
+    if (!verified(body, req.headers['yungle-signature'])) return res.writeHead(401).end();
+    res.writeHead(200).end(); // answer fast; Yungle waits 10 seconds at most
+    const event = JSON.parse(body);
+    if (event.type !== 'transfer.downloaded' || seen.has(event.id)) return;
+    seen.add(event.id);
+    const { transfer, download } = event.data;
+    await fetch(SLACK, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        text: `📥 ${download.recipient ?? 'Someone'} downloaded ${transfer.title ?? 'a transfer'}`,
+      }),
+    });
+  });
+}).listen(8080);
+```
+
+```bash
+YUNGLE_WEBHOOK_SECRET=whsec_… SLACK_WEBHOOK_URL=https://hooks.slack.com/services/… \
+  node slack-on-download.mjs
+```
+
+## 3. Try it without deploying anything
+
+While you build it, run the receiver on your laptop and let the CLI forward real events to
+it. Nothing needs a public URL:
+
+```bash
+yungle webhooks listen --forward-to http://localhost:8080
+# prints the session's signing secret: start the receiver with that one
+```
+
+Then send yourself a transfer and download it; the Slack message follows within seconds.
+
+## Why it is written this way
+
+- It verifies before it parses. The signature covers the exact bytes received, and anyone can reach a public URL.
+- It answers 200 before calling Slack. A slow Slack would otherwise count as a failed delivery, and Yungle would retry.
+- It remembers event ids. Delivery is at least once, so a retry after a lost response is the same event again.
+- One visit is one event, however many files the client saved, so the channel gets one message per download, not one per file.
+
+<Note>
+  Every event and its payload is in the [webhooks guide](/webhooks).
+</Note>

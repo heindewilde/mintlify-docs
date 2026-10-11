@@ -1,0 +1,16 @@
+---
+title: "API reference"
+sidebarTitle: "Introduction"
+description: "Every endpoint in the Yungle file transfer API, with parameters and request bodies, generated from the OpenAPI 3.1 document."
+---
+
+Every endpoint in `/api/v1`, generated from the [OpenAPI 3.1 document](https://yungle.co/api/v1/openapi.json) the server validates with. Authenticate with `Authorization: Bearer yk_live_…`. Lists that grow without bound take `limit` and `cursor` and return `nextCursor`. Any `POST` accepts an `Idempotency-Key` header so it is safe to retry (see [Errors](/errors)).
+
+## How it is shaped
+
+- **Base URL** is `https://yungle.co/api/v1`. Everything is JSON in and JSON out.
+- **Authentication** is an API key sent as a bearer token on every request. Scopes and failure statuses are on [Authentication](/authentication).
+- **Errors** share one shape and a stable `code`; every code is listed on [Errors](/errors).
+- **Limits** on requests and outbound email are on [Rate and email limits](/limits).
+
+The endpoints are grouped by resource in the sidebar, in the same groups as the OpenAPI document's tags.

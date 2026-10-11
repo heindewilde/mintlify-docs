@@ -1,0 +1,56 @@
+---
+title: "Contacts"
+description: "Read and write the workspace address book through the Yungle API, to keep it in step with whatever system you already use."
+---
+
+The workspace address book: people you send to and invite. A contact grants nothing on its own — it is a convenience, not a permission.
+
+## Endpoints
+
+### GET /contacts
+
+Everyone in the book, sorted by last name.
+
+### POST /contacts
+
+`email` is the only required field, and it is unique per workspace, case-insensitively. A duplicate returns `409 conflict`.
+
+### GET /contacts/\{id\}
+
+### PATCH /contacts/\{id\}
+
+A full replacement despite the verb: any field you omit is cleared. Read the contact, change what you need, send the whole thing back.
+
+### DELETE /contacts/\{id\}
+
+Removes the contact and nothing else. If they were invited to a collection they keep their access — the guest record is a separate thing. Remove that through the collection's guest endpoint.
+
+## Syncing from another system
+
+There is no bulk endpoint, and the per-key rate limit is generous enough that you do not need one. Create sequentially and treat `409` as “already there”:
+
+```javascript
+for (const person of fromCrm) {
+  const res = await fetch('https://yungle.co/api/v1/contacts', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({
+      firstName: person.first,
+      lastName: person.last,
+      company: person.company,
+      email: person.email,
+      type: 'client',
+    }),
+  });
+  if (res.status === 409) continue; // already in the book
+  if (!res.ok) throw new Error(await res.text());
+}
+```
+
+## Types
+
+`type` is one of `client`, `colleague`, `partner`, `friend`, `family` or `other`. An unrecognised value becomes `other` rather than failing the request — refusing to save someone's contact over a category label would be theatre.
+
+## Data protection
+
+Contacts are personal data about people who have never used Yungle themselves. They have no expiry, so they stay until you remove them or delete the account. They are included in the account data export, which is the only way to get an address book back out — there is no CSV or vCard export.
