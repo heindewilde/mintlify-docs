@@ -82,7 +82,7 @@
             ]
           }
         ],
-        "openapi": "https://yungle.co/api/v1/openapi.json"
+        "openapi": "openapi.json"
       }
     ]
   },

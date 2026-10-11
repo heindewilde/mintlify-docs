@@ -9,5 +9,5 @@ node scripts/copy-guard.mjs       # what the docs may never claim
 mint validate && node scripts/links.mjs
 ```
 
-`snippets/generated/` is rendered from the Yungle app's code and must not be edited by hand. See
+`snippets/generated/` and `openapi.json` are synced from the Yungle app and must not be edited by hand. See
 [AGENTS.md](AGENTS.md) for that and the other rules these docs follow.

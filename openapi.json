@@ -1,0 +1,5770 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Yungle API",
+    "version": "1.0.0",
+    "description": "Send transfers, build collections and sync contacts from your own systems. Every account can use it: transfers and contacts on the free plan, collections on a paid one.\n\nLists that can grow without bound (transfers, collection files) take `limit` and `cursor` and return `nextCursor`; pass it back unchanged for the next page, and stop when it is null.\n\nAny POST accepts an `Idempotency-Key` header (1–255 printable characters; a UUID). A retry with the same key and body within 24 hours replays the original success with `Idempotent-Replayed: true` and creates nothing.\n\nFile bytes never travel through this API: endpoints that accept files return a tus endpoint and a per-file upload token, and you stream to that. See the Uploads guide.\n\nThe vault and end-to-end encrypted transfers are not reachable here, and cannot be: their keys are derived in the client and never sent to us.\n\n**Errors** are JSON with a stable `error.code` (the `Error` schema); `error.docs` links to the explanation. See https://yungle.co/developers/errors.\n\n**Rate limits** are reported on every metered response in the IETF draft `RateLimit` and `RateLimit-Policy` headers, per key per minute and per workspace per day. A 429 carries `Retry-After` in seconds. See https://yungle.co/developers/limits.\n\n**Versioning.** The version is in the path. `/api/v1` changes additively only: new endpoints, optional fields and response fields may appear; nothing existing is removed, renamed or made required. A breaking change ships as `/api/v2`. An operation that is going away is marked `deprecated: true` here, answers with a `Deprecation` header (RFC 9745) and a `Sunset` header (RFC 8594) giving its last day, and is announced in the changelog at least six months before that day: https://yungle.co/developers/changelog. No v1 operation is deprecated.",
+    "contact": {
+      "name": "Yungle",
+      "url": "https://yungle.co/developers"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "termsOfService": "https://yungle.co/legal/terms"
+  },
+  "servers": [
+    {
+      "url": "https://yungle.co/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "apiKey": []
+    }
+  ],
+  "components": {
+    "schemas": {
+      "UploadTarget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "File id, for removing it later."
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bytes, as registered. The upload must be exactly this long."
+          },
+          "uploadToken": {
+            "type": "string",
+            "description": "Send as `x-yungle-upload-token` on every tus request for this file."
+          },
+          "uploadTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When `uploadToken` stops working (two hours). An upload that may run longer renews it before then: `POST /api/uploads/token` with the current token in `x-yungle-upload-token` returns `{ uploadToken, expiresAt }`. An expired token cannot be renewed."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "size",
+          "uploadToken",
+          "uploadTokenExpiresAt"
+        ],
+        "description": "Where to stream one file."
+      },
+      "Transfer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Part of the share URL. An output only: address the transfer by `id`."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The link to give recipients. Not live until the transfer is finalized."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `active`, `expired`, `infected`, `removed`. Treat unknown values as unknown, not as an error."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Present on the single-transfer read."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "e2ee": {
+            "type": "boolean",
+            "description": "End-to-end encrypted: the working link carries a key Yungle never holds, so `url` alone does not open it."
+          },
+          "downloadCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxDownloads": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null for unlimited."
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until sent. A draft is not shareable."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Every transfer expires; a paid plan lets you set when."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "url",
+          "title",
+          "status",
+          "sizeBytes",
+          "recipients",
+          "hasPassword",
+          "e2ee",
+          "downloadCount",
+          "maxDownloads",
+          "finalizedAt",
+          "expiresAt",
+          "createdAt"
+        ]
+      },
+      "TransferSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `active`, `expired`, `infected`, `removed`. Treat unknown values as unknown, not as an error."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "firstFileName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "e2ee": {
+            "type": "boolean",
+            "description": "End-to-end encrypted: the working link carries a key Yungle never holds, so `url` alone does not open it."
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "downloadCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxDownloads": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "url",
+          "title",
+          "status",
+          "sizeBytes",
+          "fileCount",
+          "firstFileName",
+          "e2ee",
+          "recipients",
+          "downloadCount",
+          "maxDownloads",
+          "finalizedAt",
+          "expiresAt",
+          "createdAt"
+        ]
+      },
+      "TransferDraft": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The size ceiling this transfer was created under."
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "expiresAt",
+          "maxBytes"
+        ]
+      },
+      "TransferFile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Relative path inside an uploaded folder, if any."
+          },
+          "scanResult": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null until the virus scan has run; `clean` after."
+          },
+          "crc32": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CRC-32 (IEEE, as in zip and `zlib.crc32`) of the file's bytes, as 8 hex digits — to check a download arrived intact. Null while not yet known."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sizeBytes",
+          "mimeType",
+          "path",
+          "scanResult",
+          "crc32",
+          "createdAt"
+        ]
+      },
+      "Recipient": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "notifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "downloaded": {
+            "type": "boolean"
+          },
+          "opened": {
+            "type": "boolean",
+            "description": "Retired: always false. Page visits are no longer recorded."
+          },
+          "bouncedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Set when mail to this address permanently failed."
+          },
+          "bounceKind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "notifiedAt",
+          "downloaded",
+          "opened",
+          "bouncedAt",
+          "bounceKind"
+        ]
+      },
+      "Download": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fileName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null for the whole-transfer zip."
+          },
+          "recipientEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "One page visit is one download; its files share this id."
+          },
+          "ipTruncated": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Retired: always null."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "fileName",
+          "recipientEmail",
+          "sessionId",
+          "ipTruncated",
+          "createdAt"
+        ]
+      },
+      "CollectionSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Currently one of: `private`, `public`, `password`. Treat unknown values as unknown, not as an error."
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "coverFileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "visibility",
+          "fileCount",
+          "sizeBytes",
+          "coverFileId",
+          "updatedAt"
+        ]
+      },
+      "Collection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "description": "Currently one of: `private`, `public`, `password`. Treat unknown values as unknown, not as an error."
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The secret link. Treat it like a password."
+          },
+          "customLink": {
+            "type": "boolean",
+            "description": "Whether the readable `<your-domain>/<slug>` address is on."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Present on the single-collection read."
+          },
+          "coverFileId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null on a paid plan: nothing expires."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "slug",
+          "description",
+          "visibility",
+          "url",
+          "customLink",
+          "sizeBytes",
+          "coverFileId",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CollectionFile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mimeType": {
+            "type": "string"
+          },
+          "folderId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null at the top level."
+          },
+          "hasThumbnail": {
+            "type": "boolean"
+          },
+          "crc32": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CRC-32 (IEEE, as in zip and `zlib.crc32`) of the file's bytes, as 8 hex digits — to check a download arrived intact. Null while not yet known."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sizeBytes",
+          "mimeType",
+          "folderId",
+          "hasThumbnail",
+          "crc32",
+          "createdAt"
+        ]
+      },
+      "Folder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Materialized, e.g. `/Ceremony/Raw`."
+          },
+          "parentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "parentId",
+          "depth"
+        ]
+      },
+      "Guest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `invited`, `active`, `removed`. Treat unknown values as unknown, not as an error."
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "status"
+        ]
+      },
+      "Contact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "firstName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "company": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "Currently one of: `client`, `friend`, `colleague`, `family`, `partner`, `other`. Treat unknown values as unknown, not as an error."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "company",
+          "email",
+          "phone",
+          "type",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "Webhook": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null for a pull endpoint."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "push",
+              "pull"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "disabledReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastSuccessAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastFailureAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "mode",
+          "description",
+          "events",
+          "enabled",
+          "disabledReason",
+          "lastSuccessAt",
+          "lastFailureAt",
+          "createdAt"
+        ]
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "eventId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `pending`, `succeeded`, `failed`, and `available` for an event waiting to be pulled. Treat unknown values as unknown, not as an error."
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextAttemptAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastStatusCode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "eventId",
+          "type",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastStatusCode",
+          "lastError",
+          "deliveredAt",
+          "createdAt"
+        ]
+      },
+      "WebhookEvent": {
+        "type": "object",
+        "properties": {
+          "deliveryId": {
+            "type": "string",
+            "description": "Pass the last one back as `cursor`."
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Shaped per event type; see the Webhooks guide."
+          }
+        },
+        "required": [
+          "deliveryId",
+          "id",
+          "type",
+          "createdAt",
+          "data"
+        ],
+        "description": "The same JSON a push delivery sends, plus `deliveryId`."
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "email": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "displayName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "customDomain": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The verified custom domain, if any."
+              }
+            },
+            "required": [
+              "id",
+              "email",
+              "displayName",
+              "customDomain"
+            ]
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "tier": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Null on the free plan."
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "description": "Currently one of: `none`, `pending`, `active`, `past_due`, `canceled`, `expired`. Treat unknown values as unknown, not as an error."
+              },
+              "quotaBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "usedBytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "tier",
+              "name",
+              "status",
+              "quotaBytes",
+              "usedBytes"
+            ]
+          },
+          "key": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "via": {
+                "type": "string",
+                "enum": [
+                  "key",
+                  "oauth"
+                ],
+                "description": "An API key, or an OAuth grant (a connected app)."
+              },
+              "canEmail": {
+                "type": "boolean",
+                "description": "Whether this credential may make Yungle email anyone."
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "scopes",
+              "via",
+              "canEmail"
+            ]
+          }
+        },
+        "required": [
+          "workspace",
+          "plan",
+          "key"
+        ]
+      },
+      "Referral": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Your invite code. A friend can type it in Settings › Plan."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Your invite link — the same code, as a page that signs them up."
+          },
+          "earnedMonths": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Free months earned so far."
+          },
+          "remainingMonths": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Free months still available to earn."
+          },
+          "cap": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The most free months one person can earn, ever."
+          },
+          "capped": {
+            "type": "boolean",
+            "description": "True once `earnedMonths` reached `cap`. The link still gives friends their month."
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Friends in their free month, or inside the 14 days after their first payment."
+          }
+        },
+        "required": [
+          "code",
+          "url",
+          "earnedMonths",
+          "remainingMonths",
+          "cap",
+          "capped",
+          "pending"
+        ]
+      },
+      "DownloadLink": {
+        "$ref": "#/components/schemas/DownloadLinks/properties/files/items"
+      },
+      "DownloadLinks": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Currently one of: `transfer`, `collection`. Treat unknown values as unknown, not as an error."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A collection's title. Always null for a transfer, whose title is never shown to recipients."
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The sender's note on a transfer."
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the transfer or collection itself expires. Null for one that keeps things forever."
+          },
+          "e2ee": {
+            "type": "boolean",
+            "description": "End-to-end encrypted: the bytes are ciphertext, and the key is in the `#` part of the link."
+          },
+          "e2eeMeta": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "False while a transfer is still uploading. `files` lists what has arrived so far; ask again later."
+          },
+          "zipUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Everything in one ZIP (resumable with `Range`). Null for a single file, or while incomplete."
+          },
+          "urlsExpireAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the signed URLs stop working. Ask again for fresh ones."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DownloadLink"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "message",
+          "expiresAt",
+          "e2ee",
+          "complete",
+          "zipUrl",
+          "urlsExpireAt",
+          "files"
+        ],
+        "description": "Signed download URLs for a transfer or collection."
+      },
+      "ImportStarted": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bytes, as the source stated them."
+          },
+          "source": {
+            "type": "string",
+            "description": "The host it is fetched from. Never the full URL, which may carry a signature."
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `queued`. Treat unknown values as unknown, not as an error."
+          }
+        },
+        "required": [
+          "fileId",
+          "name",
+          "size",
+          "source",
+          "status"
+        ],
+        "description": "A file Yungle is fetching from a URL."
+      },
+      "Import": {
+        "type": "object",
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "receivedBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Committed so far. Moves in steps of one storage part (32 MB or more)."
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `importing`, `ready`, `failed`. Treat unknown values as unknown, not as an error."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why it failed, when it did."
+          }
+        },
+        "required": [
+          "fileId",
+          "name",
+          "size",
+          "receivedBytes",
+          "source",
+          "status",
+          "error"
+        ],
+        "description": "Where one import stands."
+      },
+      "UploadRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The page to give people. Anyone with it can upload, until paused, closed or expired."
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collectionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "Currently one of: `active`, `paused`, `closed`. Treat unknown values as unknown, not as an error."
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "requiredItems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submissionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "receivedBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "title",
+          "message",
+          "collectionId",
+          "status",
+          "hasPassword",
+          "requiredItems",
+          "expiresAt",
+          "submissionCount",
+          "receivedBytes",
+          "createdAt"
+        ],
+        "description": "A public upload link that files arrive through, into one of your collections."
+      },
+      "Submission": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "uploaderName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As the uploader typed it: untrusted."
+          },
+          "uploaderEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As the uploader typed it: unverified."
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fileCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "uploaderName",
+          "uploaderEmail",
+          "message",
+          "fileCount",
+          "sizeBytes",
+          "createdAt"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "unauthorized",
+                  "insufficient_scope",
+                  "upgrade_required",
+                  "out_of_credit",
+                  "not_found",
+                  "invalid_request",
+                  "folder_error",
+                  "conflict",
+                  "not_editable",
+                  "quota_exceeded",
+                  "transfer_too_large",
+                  "rate_limited",
+                  "email_budget_exhausted",
+                  "password_required",
+                  "wrong_password",
+                  "guests_only",
+                  "link_unavailable",
+                  "e2ee_unsupported",
+                  "internal_error"
+                ],
+                "description": "Stable and machine-readable: branch on this. New codes may be added within an existing status."
+              },
+              "message": {
+                "type": "string",
+                "description": "For a human reading a log. May change; do not parse it."
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Present only when there is something actionable, and shaped per code."
+              },
+              "docs": {
+                "type": "string",
+                "format": "uri",
+                "description": "The page that explains this code and what to do about it."
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request was malformed or failed validation. Codes: `invalid_request`, `folder_error`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid credential. Codes: `unauthorized`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "PaymentRequired": {
+        "description": "Needs a paid plan, or prepaid credit for metered usage. Codes: `upgrade_required`, `out_of_credit`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The credential lacks a required scope, or a shared link refused access. Codes: `insufficient_scope`, `password_required`, `wrong_password`, `guests_only`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such resource in this workspace. Codes: `not_found`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Already exists, an Idempotency-Key conflict, or end-to-end encrypted content the server cannot serve. Codes: `conflict`, `e2ee_unsupported`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Gone": {
+        "description": "The transfer has been sent, revoked or expired; or a shared link is no longer available. Codes: `not_editable`, `link_unavailable`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Over the storage quota or the transfer size ceiling. Codes: `quota_exceeded`, `transfer_too_large`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit or email budget exhausted. Wait for `Retry-After`. Codes: `rate_limited`, `email_budget_exhausted`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          },
+          "Retry-After": {
+            "description": "Seconds to wait before retrying.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Our fault. `details.requestId` ties it to our logs. Codes: `internal_error`.",
+        "headers": {
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimit-Policy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "RateLimit": {
+        "description": "What is left in each bucket this request was charged against, e.g. `\"key\";r=87;t=34, \"workspace\";r=19880;t=40211` (`r` remaining, `t` seconds until reset). draft-ietf-httpapi-ratelimit-headers.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RateLimit-Policy": {
+        "description": "The buckets themselves, e.g. `\"key\";q=120;w=60, \"workspace\";q=20000;w=86400` (`q` quota, `w` window in seconds).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API key from Settings → API keys, sent as `Authorization: Bearer yk_live_…`. Scopes: transfers:read, transfers:write, collections:read, collections:write, contacts:read, contacts:write, webhooks:read, webhooks:write. A write scope implies read of the same resource."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Account",
+      "description": "Who the key is and what it may do."
+    },
+    {
+      "name": "Transfers",
+      "description": "One-off sends with an expiring link."
+    },
+    {
+      "name": "Collections",
+      "description": "Durable, folder-structured spaces clients are invited into."
+    },
+    {
+      "name": "Contacts",
+      "description": "The workspace address book."
+    },
+    {
+      "name": "Upload requests",
+      "description": "Public links that let other people send files into your collections."
+    },
+    {
+      "name": "Downloads",
+      "description": "Getting bytes out: signed, resumable URLs for your own transfers and collections, and for links shared with you."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Events pushed to your URL, signed with `Yungle-Signature`, or kept for you to pull. See the Webhooks guide."
+    }
+  ],
+  "paths": {
+    "/me": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "The workspace, plan and key behind this request",
+        "responses": {
+          "200": {
+            "description": "Account and key details.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getMe"
+      }
+    },
+    "/me/referral": {
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Your invite link and referral progress",
+        "description": "The invite link and code of the person who owns this key, and how many free months they have earned. A friend who subscribes through it gets their first month free; once they have paid for 14 days, the owner gets a month free too.",
+        "responses": {
+          "200": {
+            "description": "Invite code, link and progress.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Referral"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getReferral"
+      }
+    },
+    "/transfers": {
+      "get": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "List transfers, newest first",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Page size, 1–500. Defaults to 100."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `nextCursor` from the previous page, unchanged. Opaque: never build one."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transfer summaries, and `nextCursor` (null on the last page).",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TransferSummary"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass back unchanged for the next page. Null on the last page."
+                    }
+                  },
+                  "required": [
+                    "transfers",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listTransfers"
+      },
+      "post": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Create a transfer",
+        "description": "Always creates a **draft**: the link is not live and nobody is emailed until you call finalize. Returns a tus endpoint and one upload token per file. An unfinalized draft is swept after 24 hours.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "Filename as it should appear to the recipient."
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Exact size in bytes. Must match what you upload."
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 255,
+                          "default": "",
+                          "description": "MIME type. Best effort; never trusted."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Directory within an uploaded folder, e.g. \"Ceremony/Raw\". Omit for a loose file."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "size"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 500,
+                    "default": [],
+                    "description": "Files you will upload yourself."
+                  },
+                  "imports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "maxLength": 4096,
+                          "description": "A public http(s) URL Yungle fetches the file from — a presigned S3 link, a CDN, a release asset. It must state the file size (Content-Length, or a Range answer). Private network addresses are refused."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "The file name. Defaults to the one the source gives."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Folder to place it in, e.g. \"Exports/Final\"."
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20,
+                    "description": "Files Yungle fetches from URLs itself, so the bytes never pass through you. Up to 20 per call. Each is created like an upload (quota, size ceilings, API metering) and imported in the background; follow it with `GET /imports/{fileId}`."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Shown in your dashboard; never to recipients."
+                  },
+                  "expiresInDays": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 3650,
+                    "description": "Defaults to 7. Clamped to your plan’s maximum (7 free, 365 paid) rather than rejected."
+                  },
+                  "e2ee": {
+                    "type": "boolean",
+                    "description": "The files are encrypted by the client before upload and Yungle never holds the key, which travels in the link’s fragment. Such a transfer takes no title, no imports, and cannot be emailed or password-protected."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Draft created, with upload targets.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tusEndpoint": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Stream each file here with tus."
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UploadTarget"
+                      },
+                      "description": "One per entry in `files`, in the same order."
+                    },
+                    "imports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportStarted"
+                      },
+                      "description": "One per entry in `imports`, in the same order. Empty when none were sent."
+                    },
+                    "transfer": {
+                      "$ref": "#/components/schemas/TransferDraft"
+                    }
+                  },
+                  "required": [
+                    "tusEndpoint",
+                    "files",
+                    "imports",
+                    "transfer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createTransfer"
+      }
+    },
+    "/transfers/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Transfer detail, files and recipient status",
+        "responses": {
+          "200": {
+            "description": "The transfer.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": {
+                      "$ref": "#/components/schemas/Transfer"
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TransferFile"
+                      }
+                    },
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Recipient"
+                      }
+                    }
+                  },
+                  "required": [
+                    "transfer",
+                    "files",
+                    "recipients"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getTransfer"
+      },
+      "patch": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Change expiry or download limit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresInDays": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 3650,
+                    "description": "Clamped to your plan’s maximum rather than rejected."
+                  },
+                  "maxDownloads": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "null lifts the limit. Omit to leave unchanged."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated transfer.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": {
+                      "$ref": "#/components/schemas/Transfer"
+                    }
+                  },
+                  "required": [
+                    "transfer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updateTransfer"
+      },
+      "delete": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Revoke a transfer",
+        "description": "Immediate and irreversible: the per-file encryption keys are destroyed before this returns, so the content is unrecoverable whether or not object storage has caught up.",
+        "responses": {
+          "200": {
+            "description": "The revoked transfer.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": {
+                      "$ref": "#/components/schemas/Transfer"
+                    }
+                  },
+                  "required": [
+                    "transfer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "revokeTransfer"
+      }
+    },
+    "/transfers/{id}/finalize": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Send it",
+        "description": "Makes the link live and emails any recipients. Safe to retry — finalizing twice does not re-send. Omit `recipients` for a link-only transfer you share yourself.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recipients": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "maxItems": 10,
+                    "description": "Omit to get a link only. Each address here is emailed on your behalf."
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Recipients must enter this to open the transfer."
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "e2eeMeta": {
+                    "type": "string",
+                    "maxLength": 8192,
+                    "description": "End-to-end encrypted transfers only: the sealed `{ message }`, bound to the transfer’s slug."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The finalized transfer, and who was notified.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfer": {
+                      "$ref": "#/components/schemas/Transfer"
+                    },
+                    "notified": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Who was emailed. Empty for a link-only send."
+                    }
+                  },
+                  "required": [
+                    "transfer",
+                    "notified"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "finalizeTransfer"
+      }
+    },
+    "/transfers/{id}/files": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Add files to an unsent transfer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "Filename as it should appear to the recipient."
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Exact size in bytes. Must match what you upload."
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 255,
+                          "default": "",
+                          "description": "MIME type. Best effort; never trusted."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Directory within an uploaded folder, e.g. \"Ceremony/Raw\". Omit for a loose file."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "size"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 500,
+                    "default": [],
+                    "description": "Files you will upload yourself."
+                  },
+                  "imports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "maxLength": 4096,
+                          "description": "A public http(s) URL Yungle fetches the file from — a presigned S3 link, a CDN, a release asset. It must state the file size (Content-Length, or a Range answer). Private network addresses are refused."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "The file name. Defaults to the one the source gives."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Folder to place it in, e.g. \"Exports/Final\"."
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20,
+                    "description": "Files Yungle fetches from URLs itself, so the bytes never pass through you. Up to 20 per call. Each is created like an upload (quota, size ceilings, API metering) and imported in the background; follow it with `GET /imports/{fileId}`."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload targets for the new files.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tusEndpoint": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Stream each file here with tus."
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UploadTarget"
+                      },
+                      "description": "One per entry in `files`, in the same order."
+                    },
+                    "imports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportStarted"
+                      },
+                      "description": "One per entry in `imports`, in the same order. Empty when none were sent."
+                    }
+                  },
+                  "required": [
+                    "tusEndpoint",
+                    "files",
+                    "imports"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "addTransferFiles"
+      }
+    },
+    "/transfers/{id}/files/{fileId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "File id from the create or add response."
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Remove a file from an unsent transfer",
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "removeTransferFile"
+      }
+    },
+    "/transfers/{id}/files/{fileId}/sealed": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        },
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "File id from the create or add response."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Store an encrypted file’s sealed name and thumbnail",
+        "description": "End-to-end encrypted transfers only. Sealed with `yungle-e2e` after the file is created, because each blob binds the file’s id. Yungle stores the ciphertext and learns nothing from it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "meta": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "description": "Sealed `{ name, path, size, type }`, from `yungle-e2e`."
+                  },
+                  "thumb": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 48000,
+                    "description": "Sealed WebP thumbnail, base64. Images only."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stored": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "stored"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "sealTransferFile"
+      }
+    },
+    "/transfers/{id}/downloads": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Transfers"
+        ],
+        "summary": "Download receipts",
+        "description": "One page visit is one download, not one per file — events from the same visit share a `sessionId`. Most recent 200 events.",
+        "responses": {
+          "200": {
+            "description": "Download events and per-recipient status.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "downloads": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Download"
+                      }
+                    },
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Recipient"
+                      }
+                    },
+                    "totalDownloads": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "downloads",
+                    "recipients",
+                    "totalDownloads"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listTransferDownloads"
+      }
+    },
+    "/transfers/{id}/download-links": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Transfer id. Never the share slug, which is a capability."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Transfers",
+          "Downloads"
+        ],
+        "summary": "Download your own transfer",
+        "description": "Signed URLs for each file and a ZIP, valid for 24 hours, that need no key — hand them to curl, a queue worker or an agent. Fetching bytes this way is not a recipient download: it never appears in receipts. End-to-end encrypted transfers answer `e2ee_unsupported`.",
+        "responses": {
+          "200": {
+            "description": "Signed download URLs.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadLinks"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getTransferDownloadLinks"
+      }
+    },
+    "/requests": {
+      "get": {
+        "tags": [
+          "Upload requests"
+        ],
+        "summary": "List upload requests",
+        "description": "Your upload links, newest first (up to 100), with how much has arrived through each.",
+        "responses": {
+          "200": {
+            "description": "Upload requests.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UploadRequest"
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listRequests"
+      },
+      "post": {
+        "tags": [
+          "Upload requests"
+        ],
+        "summary": "Create an upload request",
+        "description": "A public page where anyone with the link can upload files into one of your collections — clients sending raw footage, a supplier sending documents. Files are scanned like any upload and count against your storage. Subscribe to `request.submitted` to hear when someone has sent something.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "collectionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "description": "Where the files land. Not the vault."
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Shown to the people uploading."
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "A note on the upload page."
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "description": "Uploaders must enter this first."
+                  },
+                  "requiredItems": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 30,
+                    "description": "A checklist shown on the page — guidance, not enforcement."
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "When the link stops taking uploads. Omit for never."
+                  }
+                },
+                "required": [
+                  "collectionId",
+                  "title"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The request, with the link to give people.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/UploadRequest"
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createRequest"
+      }
+    },
+    "/requests/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Upload request id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Upload requests"
+        ],
+        "summary": "An upload request and who has sent what",
+        "description": "Submissions newest first. Names, emails and messages are whatever the uploader typed: treat them as untrusted text. The files themselves are in the collection (`GET /collections/{id}/files`).",
+        "responses": {
+          "200": {
+            "description": "The request and its submissions.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/UploadRequest"
+                    },
+                    "submissions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Submission"
+                      }
+                    }
+                  },
+                  "required": [
+                    "request",
+                    "submissions"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getRequest"
+      },
+      "patch": {
+        "tags": [
+          "Upload requests"
+        ],
+        "summary": "Pause, resume or close an upload request",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "paused",
+                      "closed"
+                    ],
+                    "description": "`paused` stops uploads until set back to `active`; `closed` stops them for good."
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated request.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "$ref": "#/components/schemas/UploadRequest"
+                    }
+                  },
+                  "required": [
+                    "request"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updateRequest"
+      }
+    },
+    "/imports/{fileId}": {
+      "parameters": [
+        {
+          "name": "fileId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The `fileId` from an `imports` entry in a create response."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Transfers",
+          "Collections"
+        ],
+        "summary": "Follow a URL import",
+        "description": "Files sent as `imports` are fetched by Yungle in the background. This says how far one has got: `importing` (with `receivedBytes`), `ready`, or `failed` with the reason. A transfer finalized while imports are running goes out when the last one lands, exactly as with a slow upload.",
+        "responses": {
+          "200": {
+            "description": "The import's status.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Import"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getImport"
+      }
+    },
+    "/links/resolve": {
+      "post": {
+        "tags": [
+          "Downloads"
+        ],
+        "summary": "Download a link someone shared with you",
+        "description": "Pass a transfer (`/t/…`) or collection (`/c/…`) link and get what a person opening it in a browser could download, as signed URLs. The same rules as the page apply: passwords go through the same attempt budgets, one call counts as one download of the transfer, a download limit is enforced, and a collection shared with invited guests only is refused. Any key may call it, including a free one.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "A Yungle share link: `https://yungle.co/t/…` (a transfer) or `https://yungle.co/c/…` (a collection)."
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "For a password-protected link."
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed download URLs.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadLinks"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "resolveLink"
+      }
+    },
+    "/collections": {
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "List collections",
+        "description": "Never includes your vault, which is not reachable from the API at all.",
+        "responses": {
+          "200": {
+            "description": "Collection summaries.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collections": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CollectionSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "collections"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listCollections"
+      },
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Create a collection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new collection, with its secret link.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collection": {
+                      "$ref": "#/components/schemas/Collection"
+                    }
+                  },
+                  "required": [
+                    "collection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createCollection"
+      }
+    },
+    "/collections/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Collection detail",
+        "responses": {
+          "200": {
+            "description": "The collection.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collection": {
+                      "$ref": "#/components/schemas/Collection"
+                    }
+                  },
+                  "required": [
+                    "collection"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getCollection"
+      },
+      "patch": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Rename or re-describe",
+        "description": "Title and description only. Sharing settings are deliberately not writable here. Renaming never changes the URL — it has already been sent to people.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated collection.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "collection": {
+                      "$ref": "#/components/schemas/Collection"
+                    }
+                  },
+                  "required": [
+                    "collection"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updateCollection"
+      },
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Delete a collection and its contents",
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteCollection"
+      }
+    },
+    "/collections/{id}/download-links": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections",
+          "Downloads"
+        ],
+        "summary": "Download your own collection",
+        "description": "Signed URLs for every file (with its folder path) and a whole-collection ZIP, valid for 24 hours, that need no key. Up to 10,000 files.",
+        "responses": {
+          "200": {
+            "description": "Signed download URLs.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DownloadLinks"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "410": {
+            "$ref": "#/components/responses/Gone"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getCollectionDownloadLinks"
+      }
+    },
+    "/collections/{id}/files": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "List files",
+        "parameters": [
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Omit for every file. Pass `root` for the top level, or a folder id."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "description": "Page size, 1–1000. Omit it to get every file in one response."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `nextCursor` from the previous page, unchanged. Opaque: never build one."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Files, oldest first, and `nextCursor` (null on the last page).",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CollectionFile"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Pass back unchanged for the next page. Null on the last page."
+                    }
+                  },
+                  "required": [
+                    "files",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listCollectionFiles"
+      },
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Register files for upload",
+        "description": "Reserves quota under a per-workspace lock and creates any folders implied by `path`. Returns a tus endpoint and one upload token per file.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "Filename as it should appear to the recipient."
+                        },
+                        "size": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Exact size in bytes. Must match what you upload."
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 255,
+                          "default": "",
+                          "description": "MIME type. Best effort; never trusted."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Directory within an uploaded folder, e.g. \"Ceremony/Raw\". Omit for a loose file."
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "size"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 500,
+                    "default": [],
+                    "description": "Files you will upload yourself."
+                  },
+                  "imports": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "format": "uri",
+                          "maxLength": 4096,
+                          "description": "A public http(s) URL Yungle fetches the file from — a presigned S3 link, a CDN, a release asset. It must state the file size (Content-Length, or a Range answer). Private network addresses are refused."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "description": "The file name. Defaults to the one the source gives."
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Folder to place it in, e.g. \"Exports/Final\"."
+                        }
+                      },
+                      "required": [
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 20,
+                    "description": "Files Yungle fetches from URLs itself, so the bytes never pass through you. Up to 20 per call. Each is created like an upload (quota, size ceilings, API metering) and imported in the background; follow it with `GET /imports/{fileId}`."
+                  },
+                  "folderId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Target folder. Omit or null for the collection root."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload targets.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tusEndpoint": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "Stream each file here with tus."
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UploadTarget"
+                      },
+                      "description": "One per entry in `files`, in the same order."
+                    },
+                    "imports": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ImportStarted"
+                      },
+                      "description": "One per entry in `imports`, in the same order. Empty when none were sent."
+                    }
+                  },
+                  "required": [
+                    "tusEndpoint",
+                    "files",
+                    "imports"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "addCollectionFiles"
+      },
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Delete files",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fileIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  }
+                },
+                "required": [
+                  "fileIds"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many were deleted.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "How many files were deleted."
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteCollectionFiles"
+      }
+    },
+    "/collections/{id}/folders": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "List folders",
+        "description": "Ordered by depth then path, which is **not** a pre-order traversal — build a tree from `parentId` rather than trusting the order.",
+        "responses": {
+          "200": {
+            "description": "Folders.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "folders": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Folder"
+                      }
+                    }
+                  },
+                  "required": [
+                    "folders"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listCollectionFolders"
+      },
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Create a folder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "parentId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Omit or null for the collection root."
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new folder.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "folder": {
+                      "$ref": "#/components/schemas/Folder"
+                    }
+                  },
+                  "required": [
+                    "folder"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createCollectionFolder"
+      }
+    },
+    "/collections/{id}/guests": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "List guests",
+        "responses": {
+          "200": {
+            "description": "Guests.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "guests": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Guest"
+                      }
+                    }
+                  },
+                  "required": [
+                    "guests"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listCollectionGuests"
+      },
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Invite guests by email",
+        "description": "Guests may view and download this one collection. They are free on every plan and are not workspace members.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "emails": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "email"
+                    },
+                    "minItems": 1,
+                    "maxItems": 25,
+                    "description": "Each address is emailed an invite. Capped at 25 per call."
+                  }
+                },
+                "required": [
+                  "emails"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Who was invited.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invited": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The addresses invited, lower-cased and deduplicated."
+                    }
+                  },
+                  "required": [
+                    "invited"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "inviteCollectionGuests"
+      }
+    },
+    "/collections/{id}/guests/{guestId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Collection id. Never a slug — see the Concepts page."
+        },
+        {
+          "name": "guestId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Guest id from the list endpoint."
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Remove a guest",
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "removed"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "removeCollectionGuest"
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List webhook endpoints",
+        "responses": {
+          "200": {
+            "description": "Endpoints.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webhooks": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Webhook"
+                      }
+                    }
+                  },
+                  "required": [
+                    "webhooks"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listWebhooks"
+      },
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Create an endpoint",
+        "description": "The response carries the signing `secret`, once. Free: one endpoint, transfer events.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "https URL to POST events to. null makes a pull endpoint: read its events from GET /webhooks/{id}/events."
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "transfer.ready",
+                        "transfer.downloaded",
+                        "transfer.expiring",
+                        "transfer.expired",
+                        "collection.file_uploaded",
+                        "request.submitted"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "description": "Event types to receive. Collection events need a paid plan."
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "A note for yourself."
+                  }
+                },
+                "required": [
+                  "url",
+                  "events"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The endpoint and its secret.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webhook": {
+                      "$ref": "#/components/schemas/Webhook"
+                    },
+                    "secret": {
+                      "type": "string",
+                      "description": "The signing secret. Shown once; store it now."
+                    }
+                  },
+                  "required": [
+                    "webhook",
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createWebhook"
+      }
+    },
+    "/webhooks/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Get an endpoint",
+        "responses": {
+          "200": {
+            "description": "The endpoint.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webhook": {
+                      "$ref": "#/components/schemas/Webhook"
+                    }
+                  },
+                  "required": [
+                    "webhook"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getWebhook"
+      },
+      "patch": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Change, pause or resume an endpoint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "transfer.ready",
+                        "transfer.downloaded",
+                        "transfer.expiring",
+                        "transfer.expired",
+                        "collection.file_uploaded",
+                        "request.submitted"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "description": "Event types to receive. Collection events need a paid plan."
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "false pauses deliveries; true resumes and resets the failure count."
+                  }
+                },
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The endpoint.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "webhook": {
+                      "$ref": "#/components/schemas/Webhook"
+                    }
+                  },
+                  "required": [
+                    "webhook"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updateWebhook"
+      },
+      "delete": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Delete an endpoint",
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteWebhook"
+      }
+    },
+    "/webhooks/{id}/rotate-secret": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Replace the signing secret",
+        "responses": {
+          "200": {
+            "description": "The new secret, once.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "secret": {
+                      "type": "string",
+                      "description": "The new secret. Shown once."
+                    }
+                  },
+                  "required": [
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "rotateWebhookSecret"
+      }
+    },
+    "/webhooks/{id}/test": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Send a webhook.test event",
+        "responses": {
+          "202": {
+            "description": "The delivery id.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deliveryId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "deliveryId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "testWebhook"
+      }
+    },
+    "/webhooks/{id}/deliveries": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Recent delivery attempts",
+        "responses": {
+          "200": {
+            "description": "The latest 50, newest first.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deliveries": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookDelivery"
+                      }
+                    }
+                  },
+                  "required": [
+                    "deliveries"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listWebhookDeliveries"
+      }
+    },
+    "/webhooks/{id}/deliveries/{deliveryId}/retry": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        },
+        {
+          "name": "deliveryId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Delivery id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Redeliver an event",
+        "responses": {
+          "202": {
+            "description": "Queued.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queued": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "queued"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "retryWebhookDelivery"
+      }
+    },
+    "/webhooks/{id}/events": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Webhook endpoint id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Read events (pull)",
+        "description": "Oldest first, after `cursor`. `nextCursor` is returned even on the last page, so a poller resumes from it. Kept 30 days.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "description": "Page size, 1–500. Defaults to 100."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `nextCursor` from the previous page, unchanged. Opaque: never build one."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events, each the same JSON a push delivery sends, plus `deliveryId`.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WebhookEvent"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Returned even on the last page, so a poller resumes from it."
+                    },
+                    "hasMore": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "nextCursor",
+                    "hasMore"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listWebhookEvents"
+      }
+    },
+    "/contacts": {
+      "get": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "List contacts",
+        "responses": {
+          "200": {
+            "description": "Contacts.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contacts": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Contact"
+                      }
+                    }
+                  },
+                  "required": [
+                    "contacts"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listContacts"
+      },
+      "post": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Create a contact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "company": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "The only required field. Case-insensitive and unique per workspace."
+                  },
+                  "phone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "client | colleague | partner | friend | family | other. Unknown values become \"other\"."
+                  }
+                },
+                "required": [
+                  "email"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new contact.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "$ref": "#/components/schemas/Contact"
+                    }
+                  },
+                  "required": [
+                    "contact"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createContact"
+      }
+    },
+    "/contacts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Contact id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Get a contact",
+        "responses": {
+          "200": {
+            "description": "The contact.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "$ref": "#/components/schemas/Contact"
+                    }
+                  },
+                  "required": [
+                    "contact"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getContact"
+      },
+      "patch": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Replace a contact",
+        "description": "A full replacement, not a merge: any field you omit is cleared. Send the whole contact back.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "lastName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "company": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "The only required field. Case-insensitive and unique per workspace."
+                  },
+                  "phone": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "client | colleague | partner | friend | family | other. Unknown values become \"other\"."
+                  }
+                },
+                "required": [
+                  "email"
+                ],
+                "additionalProperties": false,
+                "$schema": "http://json-schema.org/draft-07/schema#"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated contact.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contact": {
+                      "$ref": "#/components/schemas/Contact"
+                    }
+                  },
+                  "required": [
+                    "contact"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "replaceContact"
+      },
+      "delete": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "Delete a contact",
+        "description": "Revokes nothing — if they were invited to a collection, they keep access.",
+        "responses": {
+          "200": {
+            "description": "Deleted.",
+            "headers": {
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimit-Policy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/PaymentRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deleteContact"
+      }
+    }
+  }
+}
