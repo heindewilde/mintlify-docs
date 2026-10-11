@@ -185,8 +185,7 @@ From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 
     }
     ```
 
-    Finalizing is safe to retry: a repeated call does not send the link again. Pass every recipient in the first call.
-    {/* TODO verify: recipients added by a later finalize get a row and appear in `notified`, but notifyTransferReady returns early once transfers.notifiedAt is set, so they may never be emailed. */}
+    Finalizing is safe to retry: a repeated call does not email anyone twice. To add people later, finalize again with just the new addresses; only they are emailed.
 
     **Who may email.** An API key with `transfers:write` may email recipients. A connection made through OAuth, such as an AI assistant over [MCP](/mcp-server), may email only if you allowed "Email recipients" when you connected it; otherwise a call with `recipients` returns `403` [`insufficient_scope`](/errors#insufficient_scope) naming `transfers:send`, and the same call without `recipients` still works.
 
