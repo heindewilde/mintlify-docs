@@ -51,7 +51,7 @@
             "group": "Tools",
             "pages": [
               "cli",
-              "mcp",
+              "mcp-server",
               "sdks"
             ]
           },
@@ -206,7 +206,7 @@
     },
     {
       "source": "/recipes/agent-hand-off",
-      "destination": "/mcp"
+      "destination": "/mcp-server"
     },
     {
       "source": "/recipes/slack-on-download",
@@ -218,7 +218,7 @@
     },
     {
       "source": "/guides/file-transfer-for-ai-agents",
-      "destination": "/mcp"
+      "destination": "/mcp-server"
     },
     {
       "source": "/reference",

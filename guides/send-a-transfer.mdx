@@ -188,7 +188,7 @@ From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 
     Finalizing is safe to retry: a repeated call does not send the link again. Pass every recipient in the first call.
     {/* TODO verify: recipients added by a later finalize get a row and appear in `notified`, but notifyTransferReady returns early once transfers.notifiedAt is set, so they may never be emailed. */}
 
-    **Who may email.** An API key with `transfers:write` may email recipients. A connection made through OAuth, such as an AI assistant over [MCP](/mcp), may email only if you allowed "Email recipients" when you connected it; otherwise a call with `recipients` returns `403` [`insufficient_scope`](/errors#insufficient_scope) naming `transfers:send`, and the same call without `recipients` still works.
+    **Who may email.** An API key with `transfers:write` may email recipients. A connection made through OAuth, such as an AI assistant over [MCP](/mcp-server), may email only if you allowed "Email recipients" when you connected it; otherwise a call with `recipients` returns `403` [`insufficient_scope`](/errors#insufficient_scope) naming `transfers:send`, and the same call without `recipients` still works.
 
     **Email limits.** A transfer has at most 10 recipients across all calls, and a workspace may email 150 recipients a day. When the daily budget is spent, finalize returns `429` [`email_budget_exhausted`](/errors#email_budget_exhausted) and the transfer is **not** sent. Call finalize again without `recipients` to make the link live, then share it yourself. See [Email limits](/limits#email-limits).
   </Step>

@@ -30,6 +30,8 @@ built from the API's Zod schemas. Fix endpoint descriptions there, not here.
 
 ## URLs
 
-Pages keep the slugs they had at `yungle.co/developers/<slug>`, which now 308-redirects here. Renaming
+Pages keep the slugs they had at `yungle.co/developers/<slug>`, which now 308-redirects here, with
+one exception: the MCP page is `/mcp-server`, because Mintlify serves its own docs MCP server at
+`/mcp` and that path cannot be a page (yungle.co redirects `/developers/mcp` there explicitly). Renaming
 a page breaks those links and every API error body's `docs` link (`/errors#<code>`). If you must
 rename one, add a redirect in `docs.json`.

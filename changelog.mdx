@@ -117,7 +117,7 @@ A version as a whole is retired the same way, with the same six months at least,
 - `opened` on a recipient is now always `false`. Whether someone loaded a transfer page is no longer recorded — a sender learns whether the files were downloaded, and nothing about the visit before that. The field stays in the response because removing one needs a version bump.
 - Webhooks: signed pushes for `transfer.ready`, `transfer.downloaded`, `transfer.expiring`, `transfer.expired` and `collection.file_uploaded`, or pull endpoints read from `/webhooks/{id}/events`. New scopes `webhooks:read` and `webhooks:write`. See [webhooks](/guides/webhooks).
 - OAuth 2.1 sign-in for apps (`/.well-known/oauth-authorization-server`): authorization code with PKCE (S256), open client registration, refresh-token rotation, revocation, and a device flow for first-party clients. An access token works on `/api/v1` like a key; an app may email recipients only if the user allowed `transfers:send`, and otherwise gets `403 insufficient_scope`.
-- The hosted MCP server at `https://yungle.co/mcp` (Streamable HTTP), signed in with OAuth. See [MCP](/mcp).
+- The hosted MCP server at `https://yungle.co/mcp` (Streamable HTTP), signed in with OAuth. See [MCP](/mcp-server).
 - `GET /me` reports `key.via` (`key` or `oauth`) and `key.canEmail`.
 - yungle-cli 0.2.0:
   - `yungle login` signs you in from the browser, also over SSH; `yungle logout` revokes the session. `yungle login --key` saves an API key. A browser sign-in makes links but never emails anyone: `yungle send --to` checks this before uploading.
