@@ -1,0 +1,195 @@
+---
+title: "Send files from Python"
+sidebarTitle: "Send from Python"
+description: "Send files of any size from a Python script with the yungle SDK: one call for a quick send, or create, upload and send step by step."
+---
+
+Send files from a Python script, a notebook or a data pipeline with the [`yungle`](https://pypi.org/project/yungle/) SDK. It uploads resumably, retries safely, and gives you the link.
+
+## Prerequisites
+
+- Python 3.9 or newer.
+- An [API key](/authentication) with `transfers:write`, plus `transfers:read` to check download receipts.
+- The SDK:
+
+```bash
+pip install yungle
+export YUNGLE_API_KEY=yk_live_…
+```
+
+{/* TODO verify: the code here matches yungle 0.2.0 in heindewilde/yungle-clients; PyPI had 0.1.0 on 2026-10-11. Everything used below exists in 0.1.0 as well, except automatic upload-token renewal. */}
+
+## Send in one call
+
+`send()` creates a transfer, uploads each file, and sends it. It returns the sent transfer with a `notified` list of who was emailed.
+
+```python send_report.py
+from yungle import Yungle
+
+with Yungle() as yungle:  # reads YUNGLE_API_KEY
+    sent = yungle.send(
+        ["report.pdf", "data.zip"],
+        to=["client@example.com"],
+        title="Q3 delivery",
+        message="The Q3 report and the raw data.",
+    )
+
+print(sent["url"])       # https://yungle.co/t/k3v9Xq2mLp8RtZ4w
+print(sent["notified"])  # ['client@example.com']
+```
+
+Leave out `to` and nobody is emailed: you get a link to pass on yourself. `send()` also takes `password` and `expires_in_days`; the lifetime is clamped to your plan's maximum.
+
+<Note>
+  `send()` uploads each file under its own name, without folders. To keep a folder structure, register the files yourself with a `path`, as in the next section.
+</Note>
+
+## Send step by step
+
+Use the separate calls when you want folders, progress output, or to do something between upload and send.
+
+<Steps>
+  <Step title="Create a draft">
+    Register every file with its exact size in bytes. A draft is not live and nobody is emailed yet.
+
+    ```python
+    import os
+    from yungle import Yungle, upload_file
+
+    yungle = Yungle()
+
+    local = [
+        ("Shoot/Ceremony", "IMG_0001.cr3"),
+        ("Shoot/Ceremony", "IMG_0002.cr3"),
+        ("Shoot", "notes.pdf"),
+    ]
+    paths = [os.path.join(folder, name) for folder, name in local]
+
+    draft = yungle.create_transfer(
+        [
+            {"name": name, "path": folder, "size": os.path.getsize(p)}
+            for (folder, name), p in zip(local, paths)
+        ],
+        title="Wedding selects",
+    )
+    ```
+
+    `draft` holds the transfer, the upload endpoint, and one target per file, in the order you registered them:
+
+    ```json
+    {
+      "transfer": {
+        "id": "01JB9G6H7J8K9L0M1N2P3Q4R5S",
+        "slug": "k3v9Xq2mLp8RtZ4w",
+        "expiresAt": "2026-10-18T09:00:00.000Z",
+        "maxBytes": 10737418240
+      },
+      "tusEndpoint": "https://yungle.co/files",
+      "files": [
+        {
+          "id": "01JB9G6J1K2L3M4N5P6Q7R8S9T",
+          "name": "IMG_0001.cr3",
+          "size": 32104448,
+          "uploadToken": "eyJmaWxlSWQiOi…",
+          "uploadTokenExpiresAt": "2026-10-11T11:00:00.000Z"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step title="Upload each file">
+    `upload_file` streams one file to its target over tus. It resumes from the last part the server committed after a dropped connection.
+
+    ```python
+    def progress(sent: int, total: int) -> None:
+        print(f"\r{sent / total:6.1%}", end="", flush=True)
+
+    for target, path in zip(draft["files"], paths):
+        print(f"\n{target['name']}")
+        upload_file(draft["tusEndpoint"], target, path, on_progress=progress)
+    ```
+
+    `upload_file` returns the upload URL. Store it and pass it back as `upload_url=` to resume the same upload from another process.
+  </Step>
+
+  <Step title="Send it">
+    Finalize the transfer. This is safe to retry: nobody is emailed twice.
+
+    ```python
+    sent = yungle.finalize_transfer(
+        draft["transfer"]["id"],
+        recipients=["client@example.com"],
+        message="Final selects attached.",
+    )
+    print(sent["transfer"]["url"])
+    print(sent["notified"])
+    ```
+
+    ```json
+    {
+      "transfer": {
+        "id": "01JB9G6H7J8K9L0M1N2P3Q4R5S",
+        "url": "https://yungle.co/t/k3v9Xq2mLp8RtZ4w",
+        "title": "Wedding selects",
+        "status": "active",
+        "recipients": ["client@example.com"],
+        "expiresAt": "2026-10-18T09:00:00.000Z"
+      },
+      "notified": ["client@example.com"]
+    }
+    ```
+  </Step>
+
+  <Step title="Check the downloads">
+    Read the receipts later with the transfer id.
+
+    ```python
+    receipts = yungle.transfer_downloads("01JB9G6H7J8K9L0M1N2P3Q4R5S")
+    for r in receipts["recipients"]:
+        print(r["email"], "downloaded" if r["downloaded"] else "not yet")
+    ```
+
+    To be told instead of polling, subscribe to `transfer.downloaded` with a [webhook](/guides/webhooks).
+  </Step>
+</Steps>
+
+## Handle errors
+
+A failed request raises `YungleError`. Branch on `code`, never on the message.
+
+```python
+from yungle import Yungle, YungleError
+
+yungle = Yungle()
+
+try:
+    yungle.send(["render.mov"], to=["client@example.com"])
+except YungleError as err:
+    if err.code == "transfer_too_large":
+        print("Too big for this plan:", err.details.get("limitBytes"))
+    elif err.code == "email_budget_exhausted":
+        print("Daily email budget spent; share the link yourself.")
+    else:
+        print(err.status, err.code, err.message, err.docs)
+        raise
+```
+
+The client retries throttles (`429`) and server errors (`5xx`) up to three times with backoff, honoring `Retry-After`. Every `POST` carries an `Idempotency-Key`, so a retried create never makes a second transfer. Change the retry count with `Yungle(max_retries=…)`. Every code is listed on [Errors](/errors).
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="SDKs" icon="code" href="/sdks">
+    Every method in the Python and JavaScript SDKs.
+  </Card>
+  <Card title="Upload large files" icon="upload" href="/guides/upload-large-files">
+    How the resumable upload protocol works underneath.
+  </Card>
+  <Card title="Client collections" icon="folder" href="/guides/client-collections">
+    Deliver into a lasting collection instead of an expiring transfer.
+  </Card>
+  <Card title="Send from CI" icon="terminal" href="/guides/send-from-ci">
+    Send from GitHub Actions or cron with the CLI.
+  </Card>
+</Columns>

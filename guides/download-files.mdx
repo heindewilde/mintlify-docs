@@ -1,0 +1,169 @@
+---
+title: "Download files"
+description: "Get signed, resumable download URLs for your own transfers and collections, or for a link someone shared with you, and see who downloaded what."
+---
+
+Downloads work like uploads: bytes never come through the JSON API. You ask for download links and get signed URLs, one per file plus a zip, that need no API key. Hand them to `curl`, a queue worker or an AI agent. Every URL supports `Range`, so a dropped download continues where it stopped.
+
+## Prerequisites
+
+- An [API key](/authentication), exported as `YUNGLE_API_KEY`:
+  - `transfers:read` for your own transfers.
+  - `collections:read` for your own collections.
+  - Any scope for a link someone shared with you. Free keys work for all three.
+- Optional: the [CLI](/cli). `yungle get <link>` needs no account at all.
+
+## Steps
+
+<Steps>
+  <Step title="Get the download links">
+    Pick the call that matches what you are downloading:
+
+    | You want | Call |
+    | --- | --- |
+    | Your own transfer | `GET /transfers/{id}/download-links` |
+    | Your own collection | `GET /collections/{id}/download-links` |
+    | A link someone shared with you (`/t/…` or `/c/…`) | `POST /links/resolve` with `{ "url": "…", "password": "…" }` |
+
+    <CodeGroup>
+
+    ```bash curl
+    # Your own transfer
+    curl https://yungle.co/api/v1/transfers/01JB9Q3T5V7X9Z1B3D5F7H9K2M/download-links \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+
+    # A link someone shared with you
+    curl -X POST https://yungle.co/api/v1/links/resolve \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{ "url": "https://yungle.co/t/k3v9w2p7q4", "password": "harbour-lights" }'
+    ```
+
+    ```javascript JavaScript
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const own = await yungle.transferDownloadLinks('01JB9Q3T5V7X9Z1B3D5F7H9K2M');
+    const shared = await yungle.resolveLink('https://yungle.co/t/k3v9w2p7q4', 'harbour-lights');
+    ```
+
+    ```python Python
+    from yungle import Yungle
+
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+
+    own = yungle.transfer_download_links("01JB9Q3T5V7X9Z1B3D5F7H9K2M")
+    shared = yungle.resolve_link("https://yungle.co/t/k3v9w2p7q4", password="harbour-lights")
+    ```
+
+    ```bash CLI
+    # A shared link: no account needed. Asks for the password if there is one.
+    yungle get https://yungle.co/t/k3v9w2p7q4 --out ./incoming
+
+    # Your own transfer or collection
+    yungle pull --transfer 01JB9Q3T5V7X9Z1B3D5F7H9K2M --out ./incoming
+    yungle pull --collection 01JB8Z4K7Q2W3E5R6T7Y8U9I0P
+    ```
+
+    </CodeGroup>
+
+    All three return the same shape:
+
+    ```json
+    {
+      "kind": "transfer",
+      "title": null,
+      "message": "Final cut, as discussed. Notes are in the PDF.",
+      "expiresAt": "2026-11-10T09:00:00.000Z",
+      "e2ee": false,
+      "complete": true,
+      "zipUrl": "https://yungle.co/dl/transfer/01JB9Q3T5V7X9Z1B3D5F7H9K2M?token=…",
+      "urlsExpireAt": "2026-10-12T09:00:00.000Z",
+      "files": [
+        {
+          "id": "01JB9Q3T6A1C3E5G7J9L1N3P5R",
+          "name": "final-cut.mov",
+          "size": 8123456789,
+          "mimeType": "video/quicktime",
+          "path": "Exports",
+          "downloadUrl": "https://yungle.co/dl/01JB9Q3T6A1C3E5G7J9L1N3P5R?token=…",
+          "crc32": "9a3f61c2"
+        }
+      ]
+    }
+    ```
+
+    - `zipUrl` downloads everything as one zip, with folders kept. It is `null` when there is only one file, or while a transfer is still uploading.
+    - `path` is the file's folder. In a collection it is `""` for a file at the top level.
+    - `crc32` is the file's checksum as 8 hex digits, for checking a download. It can be `null`.
+    - A collection returns up to 10,000 files.
+  </Step>
+
+  <Step title="Download the files">
+    Fetch each `downloadUrl` (or `zipUrl`) with any HTTP client. No `Authorization` header is needed: the URL is the credential, so keep it out of logs and chats you do not control.
+
+    ```bash
+    # -C - resumes a partial file with a Range request
+    curl -fL -C - -o final-cut.mov "https://yungle.co/dl/01JB9Q3T6A1C3E5G7J9L1N3P5R?token=…"
+    ```
+
+    The URLs work for 24 hours (`urlsExpireAt`). A download already running is not cut off when they expire, but resuming it afterwards needs fresh URLs, so call step 1 again.
+
+    The Python SDK can save a whole set of links in one call. It keeps folders, resumes partial files, skips files already complete, and checks each checksum:
+
+    ```python
+    yungle.download("https://yungle.co/t/k3v9w2p7q4", "incoming/", password="harbour-lights")
+    ```
+  </Step>
+
+  <Step title="Know what counts as a download">
+    The two kinds of call are counted differently:
+
+    - **Your own files** (`/transfers/{id}/download-links`, `/collections/{id}/download-links`) are not a recipient download. They never appear in download receipts or `transfer.downloaded` webhooks, and never use up a download limit.
+    - **A shared link** (`/links/resolve`) is treated exactly like a person opening it in a browser. Each call is one download of a transfer: it appears in the sender's receipts and counts against their `maxDownloads`.
+  </Step>
+
+  <Step title="Handle the refusals">
+    `/links/resolve` applies the same rules as the web page:
+
+    | Situation | Answer |
+    | --- | --- |
+    | The link is password protected and you sent no `password` | `403` [`password_required`](/errors#password_required) |
+    | The password is wrong | `403` [`wrong_password`](/errors#wrong_password). Attempts are limited; too many returns `429` [`rate_limited`](/errors#rate_limited). |
+    | A collection shared with invited guests only | `403` [`guests_only`](/errors#guests_only). A guest opens it in a browser, signed in. |
+    | The transfer expired, was revoked, or is under a hold | `410` [`link_unavailable`](/errors#link_unavailable) |
+    | The link does not exist, or the transfer was never sent | `404` [`not_found`](/errors#not_found) |
+    | The transfer is still uploading | `200` with `complete: false`. `files` lists what has arrived; ask again later for the rest. |
+    | The transfer is end-to-end encrypted | `200` with `e2ee: true`. The bytes are ciphertext and the key is in the `#` part of the link, which Yungle never sees. Open it in a browser. |
+
+    Your own transfer's download links return `410` [`link_unavailable`](/errors#link_unavailable) once it has expired or been revoked, and `409` [`e2ee_unsupported`](/errors#e2ee_unsupported) for an end-to-end encrypted transfer.
+  </Step>
+</Steps>
+
+## Scanning and availability
+
+Every file is scanned for malware after it uploads. A file whose scan is still pending, or that the scanner could not inspect (`scanResult: "unscanned"`, usually very large files), is downloadable. A file found to be infected has its encryption key destroyed at once, so its download URL answers `404` for everyone, you included. Check `scanResult` per file with `GET /transfers/{id}`. See [Files and scanning](/concepts#files-and-scanning).
+
+## Track who downloaded your transfer
+
+For a transfer you sent, `GET /transfers/{id}/downloads` returns each download event and, per recipient, whether they downloaded. Recipients you emailed get a personal link, so their downloads carry their address; downloads through a link you shared yourself have `recipientEmail: null`. One visit is one download, however many files it took. [Send a transfer](/guides/send-a-transfer) walks through reading the receipts.
+
+To be told the moment a download happens instead of polling, subscribe to `transfer.downloaded` with a [webhook](/guides/webhooks).
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get `transfer.downloaded` as it happens.
+  </Card>
+  <Card title="Send a transfer" icon="send" href="/guides/send-a-transfer">
+    Read per-recipient receipts and set a download limit.
+  </Card>
+  <Card title="Receive files" icon="inbox" href="/guides/receive-files">
+    Collect files from others, then download them here.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/downloads/download-a-link-someone-shared-with-you">
+    The download endpoints in full.
+  </Card>
+</Columns>

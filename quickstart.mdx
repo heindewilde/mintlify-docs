@@ -1,250 +1,294 @@
 ---
 title: "Quickstart"
-description: "Send your first file through the Yungle API in five minutes: create a key, register a transfer, upload with tus, send it and read the download receipt."
+description: "Send your first transfer through the Yungle API and read its download receipt in about five minutes, with curl, JavaScript or Python."
 ---
 
-From nothing to a sent file and a download receipt, in five steps. Transfers work on every plan, the free one included — you need an account and an API key, nothing else.
+This page takes you from an API key to a sent transfer and its download receipt. It works on every plan, the free one included.
 
-## 1. Create an API key
+## Prerequisites
 
-In the dashboard, open [Settings → API keys](https://yungle.co/dashboard/settings/api) and create a key with the `transfers:read` and `transfers:write` scopes. It is shown once. Put it in your environment rather than in your code:
+- A Yungle account. [Sign up](https://yungle.co) if you do not have one.
+- One of: `curl` and `jq`; Node.js 22 or later; or Python 3.9 or later.
+- A small file to send. The samples use `report.pdf`.
 
-```bash
-export YUNGLE_API_KEY=yk_live_…
-```
+<Steps>
+  <Step title="Create an API key">
+    In the dashboard, open [Settings → API keys](https://yungle.co/dashboard/settings/api) and create a key with the `transfers:write` scope. That scope also lets the key read transfers.
 
-Then check it works:
+    The key is shown once. Put it in your environment:
 
-<CodeGroup>
+    ```bash
+    export YUNGLE_API_KEY=yk_live_...
+    ```
 
-```bash curl
-curl https://yungle.co/api/v1/me \
-  -H "Authorization: Bearer $YUNGLE_API_KEY"
-```
+    Install the SDK for your language, then check the key works:
 
-```javascript JavaScript
-const res = await fetch('https://yungle.co/api/v1/me', {
-  headers: { Authorization: `Bearer ${process.env.YUNGLE_API_KEY}` },
-});
-console.log(await res.json());
-```
+    <CodeGroup>
 
-```python Python
-import os, requests
+    ```bash curl
+    curl https://yungle.co/api/v1/me \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
 
-API = "https://yungle.co/api/v1"
-AUTH = {"Authorization": f"Bearer {os.environ['YUNGLE_API_KEY']}"}
+    ```javascript JavaScript
+    // npm install yungle-client
+    import { YungleClient } from 'yungle-client';
 
-print(requests.get(f"{API}/me", headers=AUTH).json())
-```
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+    console.log(await yungle.me());
+    ```
 
-```bash CLI
-npm install -g yungle-cli
-yungle whoami
-```
+    ```python Python
+    # pip install yungle
+    from yungle import Yungle
 
-</CodeGroup>
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+    print(yungle.me())
+    ```
 
-## 2. Register the files
+    </CodeGroup>
 
-Creating a transfer registers the files and returns where to upload them. It is always a **draft**: nothing is live and nobody is emailed until step 4. `size` must be the exact byte count.
+    The response describes the workspace, its plan and the key:
 
-<CodeGroup>
+    ```json
+    {
+      "workspace": { "id": "01J9Y4M2A7Q8R3S5T6V7W8X9YZ", "email": "you@example.com", "displayName": "Studio Noord", "customDomain": null },
+      "plan": { "tier": null, "name": null, "status": "none", "quotaBytes": 0, "usedBytes": 0 },
+      "key": { "id": "01JA1B2C3D4E5F6G7H8J9K0M1N", "name": "Quickstart", "scopes": ["transfers:write"], "via": "key", "canEmail": true }
+    }
+    ```
+  </Step>
 
-```bash curl
-curl -X POST https://yungle.co/api/v1/transfers \
-  -H "Authorization: Bearer $YUNGLE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Final cut","files":[{"name":"final-cut.mov","size":8123456789}]}'
+  <Step title="Create a draft transfer">
+    Register the file with its exact size in bytes. The transfer starts as a draft: nothing is live and nobody is emailed until you send it in step 4.
 
-# → { "transfer": { "id": "01J…", "slug": "…", "expiresAt": "…" },
-#     "tusEndpoint": "https://yungle.co/files",
-#     "files": [ { "id": "01J…", "name": "final-cut.mov", "size": 8123456789,
-#                  "uploadToken": "…" } ] }
-```
+    <CodeGroup>
 
-```javascript JavaScript
-import { statSync } from 'node:fs';
+    ```bash curl
+    SIZE=$(wc -c < report.pdf | tr -d ' ')
 
-const auth = {
-  Authorization: `Bearer ${process.env.YUNGLE_API_KEY}`,
-  'Content-Type': 'application/json',
-};
-const path = 'final-cut.mov';
+    curl -s -X POST https://yungle.co/api/v1/transfers \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{\"title\":\"Q3 report\",\"files\":[{\"name\":\"report.pdf\",\"size\":$SIZE}]}" \
+      > draft.json
+    ```
 
-const created = await fetch('https://yungle.co/api/v1/transfers', {
-  method: 'POST',
-  headers: auth,
-  body: JSON.stringify({
-    title: 'Final cut',
-    files: [{ name: 'final-cut.mov', size: statSync(path).size }],
-  }),
-}).then((r) => r.json());
-```
+    ```javascript JavaScript
+    import { statSync } from 'node:fs';
 
-```python Python
-path = "final-cut.mov"
+    const draft = await yungle.createTransfer({
+      title: 'Q3 report',
+      files: [{ name: 'report.pdf', size: statSync('report.pdf').size }],
+    });
+    ```
 
-created = requests.post(
-    f"{API}/transfers",
-    headers=AUTH,
-    json={
-        "title": "Final cut",
-        "files": [{"name": "final-cut.mov", "size": os.path.getsize(path)}],
-    },
-).json()
-```
+    ```python Python
+    import os
 
-</CodeGroup>
-
-## 3. Upload the bytes
-
-File bytes never go through the JSON API. Each file streams to `tusEndpoint` over [tus](https://tus.io), a resumable protocol: a dropped connection continues from the last committed part instead of starting again. curl is not a tus client, so this step uses a library — or the CLI, which does steps 2 to 4 in one command.
-
-<CodeGroup>
-
-```javascript JavaScript
-import { createReadStream } from 'node:fs';
-import * as tus from 'tus-js-client';
-
-function upload(tusEndpoint, target, path) {
-  return new Promise((resolve, reject) => {
-    new tus.Upload(createReadStream(path), {
-      endpoint: tusEndpoint,
-      uploadSize: target.size,
-      // Sent on EVERY request, not only the creation POST.
-      headers: { 'x-yungle-upload-token': target.uploadToken },
-      metadata: { fileId: target.id, token: target.uploadToken, filename: target.name },
-      retryDelays: [0, 1000, 3000, 5000, 10000],
-      onSuccess: resolve,
-      onError: reject,
-    }).start();
-  });
-}
-
-await upload(created.tusEndpoint, created.files[0], path);
-```
-
-```python Python
-# pip install requests tuspy
-import os
-from tusclient import client as tus
-
-MiB = 1024 * 1024
-
-def upload(tus_endpoint, target, path):
-    """Stream one file to Yungle, resumably."""
-    size = os.path.getsize(path)
-    # At least one server part per request, or the offset never advances.
-    chunk = max(64 * MiB, (size // (9000 * MiB) + 2) * MiB)
-    # The token authorizes every request (HEAD and PATCH too), so it goes in
-    # the client-wide headers, not only in the metadata.
-    tc = tus.TusClient(tus_endpoint, headers={"x-yungle-upload-token": target["uploadToken"]})
-    uploader = tc.uploader(
-        path,
-        chunk_size=chunk,
-        retries=5,
-        retry_delay=5,
-        metadata={
-            "fileId": target["id"],
-            "token": target["uploadToken"],
-            "filename": target["name"],
-        },
+    draft = yungle.create_transfer(
+        [{"name": "report.pdf", "size": os.path.getsize("report.pdf")}],
+        title="Q3 report",
     )
-    uploader.upload()
+    ```
 
-upload(created["tusEndpoint"], created["files"][0], path)
-```
+    </CodeGroup>
 
-```bash CLI
-# Registers, uploads, sends and prints the link — steps 2 to 4 at once.
-yungle send final-cut.mov --to client@example.com --title "Final cut"
-```
+    You get back the draft, where to upload, and one upload target per file:
 
-</CodeGroup>
+    ```json
+    {
+      "transfer": { "id": "01JA8Z6Q2K3M4N5P6R7S8T9V0W", "slug": "k3v9xq7mtr2p", "expiresAt": "2026-10-18T09:12:44.000Z", "maxBytes": ... },
+      "tusEndpoint": "https://yungle.co/files",
+      "files": [
+        {
+          "id": "01JA8Z6Q3A4B5C6D7E8F9G0H1J",
+          "name": "report.pdf",
+          "size": 2481152,
+          "uploadToken": "eyJhbGciOi...",
+          "uploadTokenExpiresAt": "2026-10-11T11:12:44.000Z"
+        }
+      ],
+      "imports": []
+    }
+    ```
+  </Step>
 
-<Note>
-Send `x-yungle-upload-token` on every tus request, not only the first — HEAD and PATCH are authorized too. The details, and the rules that bite, are in [Uploading files](/uploads).
-</Note>
+  <Step title="Upload the file">
+    File bytes do not go through the JSON API. You stream each file to `tusEndpoint` with [tus](https://tus.io), a resumable upload protocol, and send the file's `uploadToken` in the `x-yungle-upload-token` header on every request.
 
-## 4. Send it
+    <CodeGroup>
 
-Finalizing makes the link live. Pass `recipients` to have Yungle email them, or leave it out and share the link yourself. It is safe to retry: nobody is emailed twice.
+    ```bash curl
+    TUS=$(jq -r .tusEndpoint draft.json)
+    FILE_ID=$(jq -r '.files[0].id' draft.json)
+    TOKEN=$(jq -r '.files[0].uploadToken' draft.json)
+    b64() { printf %s "$1" | base64 | tr -d '\n'; }
 
-<CodeGroup>
+    # Create the upload. Yungle answers with its URL in the Location header.
+    LOCATION=$(curl -si -X POST "$TUS" \
+      -H "Tus-Resumable: 1.0.0" \
+      -H "x-yungle-upload-token: $TOKEN" \
+      -H "Upload-Length: $SIZE" \
+      -H "Upload-Metadata: fileId $(b64 "$FILE_ID"),token $(b64 "$TOKEN"),filename $(b64 report.pdf)" \
+      | grep -i '^location:' | awk '{print $2}' | tr -d '\r')
 
-```bash curl
-curl -X POST https://yungle.co/api/v1/transfers/01J…/finalize \
-  -H "Authorization: Bearer $YUNGLE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"recipients":["client@example.com"],"message":"Final cut attached."}'
+    # Send the bytes.
+    curl -X PATCH "$LOCATION" \
+      -H "Tus-Resumable: 1.0.0" \
+      -H "x-yungle-upload-token: $TOKEN" \
+      -H "Upload-Offset: 0" \
+      -H "Content-Type: application/offset+octet-stream" \
+      --data-binary @report.pdf
+    ```
 
-# → { "transfer": { "url": "https://yungle.co/t/…", … }, "notified": ["client@example.com"] }
-```
+    ```javascript JavaScript
+    import { openAsBlob } from 'node:fs';
 
-```javascript JavaScript
-const sent = await fetch(`https://yungle.co/api/v1/transfers/${created.transfer.id}/finalize`, {
-  method: 'POST',
-  headers: auth,
-  body: JSON.stringify({ recipients: ['client@example.com'], message: 'Final cut attached.' }),
-}).then((r) => r.json());
+    // Resumable and retried; renews the two-hour upload token while it runs.
+    await yungle.uploadFile(draft.tusEndpoint, draft.files[0], await openAsBlob('report.pdf'));
+    ```
 
-console.log(sent.transfer.url);
-```
+    ```python Python
+    from yungle import upload_file
 
-```python Python
-sent = requests.post(
-    f"{API}/transfers/{created['transfer']['id']}/finalize",
-    headers=AUTH,
-    json={"recipients": ["client@example.com"], "message": "Final cut attached."},
-).json()
+    # Resumable; renews the two-hour upload token while it runs.
+    upload_file(draft["tusEndpoint"], draft["files"][0], "report.pdf")
+    ```
 
-print(sent["transfer"]["url"])
-```
+    </CodeGroup>
 
-</CodeGroup>
+    The upload is done when the last request returns `204`.
 
-## 5. See who downloaded it
+    <Note>
+    curl sends the whole file in one request and does not resume. That is fine for a small file. For large files, use an SDK or the CLI, which continue from the last committed part after a dropped connection. [Upload large files](/guides/upload-large-files) explains the rules.
+    </Note>
+  </Step>
 
-Download receipts arrive as your recipients collect the files. Poll for them, every few minutes is plenty, or have a [webhook](/webhooks) tell you the moment it happens.
+  <Step title="Send it">
+    Finalizing makes the link live. Pass `recipients` to have Yungle email them the link, or leave it out and share the link yourself. Use your own address while you try this.
 
-<CodeGroup>
+    <CodeGroup>
 
-```bash curl
-curl https://yungle.co/api/v1/transfers/01J…/downloads \
-  -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```bash curl
+    TRANSFER_ID=$(jq -r .transfer.id draft.json)
 
-# → { "downloads": [ { "fileName": null, "recipientEmail": "client@example.com",
-#                      "sessionId": "…", "createdAt": "…" } ],
-#     "recipients": [ { "email": "client@example.com", "downloaded": true, … } ],
-#     "totalDownloads": 1 }
-```
+    curl -X POST "https://yungle.co/api/v1/transfers/$TRANSFER_ID/finalize" \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"recipients":["you@example.com"],"message":"Here is the Q3 report."}'
+    ```
 
-```javascript JavaScript
-const receipts = await fetch(`https://yungle.co/api/v1/transfers/${created.transfer.id}/downloads`, {
-  headers: auth,
-}).then((r) => r.json());
+    ```javascript JavaScript
+    const sent = await yungle.finalizeTransfer(draft.transfer.id, {
+      recipients: ['you@example.com'],
+      message: 'Here is the Q3 report.',
+    });
+    console.log(sent.transfer.url);
+    ```
 
-for (const r of receipts.recipients) console.log(r.email, r.downloaded ? 'downloaded' : 'not yet');
-```
+    ```python Python
+    sent = yungle.finalize_transfer(
+        draft["transfer"]["id"],
+        recipients=["you@example.com"],
+        message="Here is the Q3 report.",
+    )
+    print(sent["transfer"]["url"])
+    ```
 
-```python Python
-receipts = requests.get(
-    f"{API}/transfers/{created['transfer']['id']}/downloads", headers=AUTH
-).json()
+    </CodeGroup>
 
-for r in receipts["recipients"]:
-    print(r["email"], "downloaded" if r["downloaded"] else "not yet")
-```
+    The response carries the transfer, with its share `url`, and who was emailed:
 
-```bash CLI
-yungle transfers
-```
+    ```json
+    {
+      "transfer": {
+        "id": "01JA8Z6Q2K3M4N5P6R7S8T9V0W",
+        "url": "https://yungle.co/t/k3v9xq7mtr2p",
+        "status": "active",
+        "recipients": ["you@example.com"],
+        "finalizedAt": "2026-10-11T09:14:02.000Z",
+        "expiresAt": "2026-10-18T09:12:44.000Z",
+        ...
+      },
+      "notified": ["you@example.com"]
+    }
+    ```
 
-</CodeGroup>
+    Finalizing is safe to retry: nobody is emailed twice.
+  </Step>
 
-## Where next
+  <Step title="Read the download receipt">
+    Open the link from the email and download the file. Then ask who downloaded it:
 
-- [Transfers](/transfers) — adding files to a draft, expiry, download limits, revoking.
-- [Collections](/collections) — durable, folder-structured spaces for clients (paid plans).
-- [Send from Python](/recipes/python) — this quickstart as one complete script.
+    <CodeGroup>
+
+    ```bash curl
+    curl "https://yungle.co/api/v1/transfers/$TRANSFER_ID/downloads" \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    const receipt = await yungle.transferDownloads(draft.transfer.id);
+    for (const r of receipt.recipients) console.log(r.email, r.downloaded ? 'downloaded' : 'not yet');
+    ```
+
+    ```python Python
+    receipt = yungle.transfer_downloads(draft["transfer"]["id"])
+    for r in receipt["recipients"]:
+        print(r["email"], "downloaded" if r["downloaded"] else "not yet")
+    ```
+
+    </CodeGroup>
+
+    ```json
+    {
+      "downloads": [
+        {
+          "id": "01JA8Z9K1M2N3P4Q5R6S7T8V9W",
+          "fileName": "report.pdf",
+          "recipientEmail": "you@example.com",
+          "sessionId": "01JA8Z9K0A1B2C3D4E5F6G7H8J",
+          "ipTruncated": null,
+          "createdAt": "2026-10-11T09:20:31.000Z"
+        }
+      ],
+      "recipients": [
+        {
+          "id": "01JA8Z7R1S2T3V4W5X6Y7Z8A9B",
+          "email": "you@example.com",
+          "notifiedAt": "2026-10-11T09:14:05.000Z",
+          "downloaded": true,
+          "opened": false,
+          "bouncedAt": null,
+          "bounceKind": null
+        }
+      ],
+      "totalDownloads": 1
+    }
+    ```
+
+    One visit to the link counts as one download, however many files it fetched. Files fetched in the same visit share a `sessionId`.
+  </Step>
+</Steps>
+
+<Tip>
+Each SDK also does steps 2 to 4 in one call. In Python, `yungle.send(["report.pdf"], to=["you@example.com"])` creates, uploads and sends. From a terminal signed in with an API key (`yungle login --key`), `yungle send report.pdf --to you@example.com` does the same; see [CLI](/cli).
+</Tip>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send a transfer" icon="paper-plane" href="/guides/send-a-transfer">
+    Expiry, passwords, download limits, adding files and revoking.
+  </Card>
+  <Card title="Upload large files" icon="upload" href="/guides/upload-large-files">
+    Resuming, chunk sizes and renewing upload tokens.
+  </Card>
+  <Card title="Webhooks" icon="bell" href="/guides/webhooks">
+    Get told when a transfer is downloaded instead of polling.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Scopes, plans and what each auth error means.
+  </Card>
+</Columns>

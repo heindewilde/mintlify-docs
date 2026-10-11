@@ -1,0 +1,337 @@
+---
+title: "Send a transfer"
+description: "Create a transfer, upload its files, send it by link or by email, then change its expiry, read receipts per recipient, or revoke it."
+---
+
+import { freeTransfer, freeDays } from "/snippets/generated/plan-facts.mdx";
+
+A [transfer](/concepts#transfer) is a one-off send: files behind a link that expires. This page takes one from creation to a download receipt, and shows how to change or revoke it afterwards.
+
+## Prerequisites
+
+- An [API key](/authentication) with the `transfers:read` and `transfers:write` scopes, exported as `YUNGLE_API_KEY`. Transfers work on every plan, the free one included.
+- For the SDK tabs: `npm install yungle-client` (Node 20 or later) or `pip install yungle`. For the CLI tab: `npm install -g yungle-cli`. See [SDKs](/sdks) and [CLI](/cli).
+
+<Tip>
+From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 1 to 3 in one command, resumably. The Python SDK has the same shortcut as `yungle.send(["final-cut.mov"], to=["client@example.com"])`.
+</Tip>
+
+## Steps
+
+<Steps>
+  <Step title="Create the transfer">
+    Register each file with its name and its exact size in bytes. The transfer starts as a **draft**: the link is not live and nobody is emailed until you send it in step 3. A draft you never send is deleted after 24 hours.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/transfers \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "title": "Final cut, v3",
+        "expiresInDays": 30,
+        "files": [{ "name": "final-cut.mov", "size": 8123456789 }]
+      }'
+    ```
+
+    ```javascript JavaScript
+    import { statSync } from 'node:fs';
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const draft = await yungle.createTransfer({
+      title: 'Final cut, v3',
+      expiresInDays: 30,
+      files: [{ name: 'final-cut.mov', size: statSync('final-cut.mov').size }],
+    });
+    ```
+
+    ```python Python
+    import os
+    from yungle import Yungle
+
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+
+    draft = yungle.create_transfer(
+        [{"name": "final-cut.mov", "size": os.path.getsize("final-cut.mov")}],
+        title="Final cut, v3",
+        expires_in_days=30,
+    )
+    ```
+
+    </CodeGroup>
+
+    The response is `201` with the transfer's `id`, where to upload (`tusEndpoint`), and one upload target per file:
+
+    ```json
+    {
+      "transfer": {
+        "id": "01JB9Q3T5V7X9Z1B3D5F7H9K2M",
+        "slug": "k3v9w2p7q4",
+        "expiresAt": "2026-11-10T09:00:00.000Z",
+        "maxBytes": 268435456000
+      },
+      "tusEndpoint": "https://yungle.co/files",
+      "files": [
+        {
+          "id": "01JB9Q3T6A1C3E5G7J9L1N3P5R",
+          "name": "final-cut.mov",
+          "size": 8123456789,
+          "uploadToken": "eyJzY29wZSI6InVwbG9hZCIs…",
+          "uploadTokenExpiresAt": "2026-10-11T11:00:00.000Z"
+        }
+      ],
+      "imports": []
+    }
+    ```
+
+    - `title` appears only in your dashboard, never to recipients.
+    - `expiresInDays` defaults to {freeDays}. A longer value is clamped to your plan's maximum, not rejected: {freeDays} days on the free plan, a year on a paid plan.
+    - `maxBytes` is the most this transfer may hold: {freeTransfer} on the free plan, your plan's storage quota on a paid one. Registering more returns `413` [`transfer_too_large`](/errors#transfer_too_large) before any bytes move.
+    - Add `"path": "Day 1/Card A"` to a file to keep its folder in the recipient's zip.
+  </Step>
+
+  <Step title="Upload the files">
+    Stream each file to `tusEndpoint` with its `uploadToken`. The SDKs and the CLI handle the protocol, retries and token renewal. To write your own client, follow [Upload large files](/guides/upload-large-files).
+
+    <CodeGroup>
+
+    ```javascript JavaScript
+    import { openAsBlob } from 'node:fs';
+
+    await yungle.uploadFile(draft.tusEndpoint, draft.files[0], await openAsBlob('final-cut.mov'));
+    ```
+
+    ```python Python
+    from yungle import upload_file
+
+    upload_file(draft["tusEndpoint"], draft["files"][0], "final-cut.mov")
+    ```
+
+    </CodeGroup>
+
+    To add more files before sending, call `POST /transfers/{id}/files` with the same `files` shape. To drop one, call `DELETE /transfers/{id}/files/{fileId}`. Both work only on a draft: once the transfer is sent its contents are fixed, and either call returns `410` [`not_editable`](/errors#not_editable).
+  </Step>
+
+  <Step title="Send it">
+    Finalizing makes the link live. Choose how it reaches people:
+
+    - **By link:** omit `recipients`. Nobody is emailed and no email budget is spent. Share `transfer.url` yourself.
+    - **By email:** pass up to 10 addresses in `recipients`. Yungle emails each one a personal link once every file has finished uploading, so you can finalize before the upload ends.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/transfers/01JB9Q3T5V7X9Z1B3D5F7H9K2M/finalize \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "recipients": ["editor@example.com"],
+        "message": "Final cut, as discussed. Notes are in the PDF.",
+        "password": "harbour-lights"
+      }'
+    ```
+
+    ```javascript JavaScript
+    const sent = await yungle.finalizeTransfer(draft.transfer.id, {
+      recipients: ['editor@example.com'],
+      message: 'Final cut, as discussed. Notes are in the PDF.',
+      password: 'harbour-lights',
+    });
+
+    console.log(sent.transfer.url);
+    ```
+
+    ```python Python
+    sent = yungle.finalize_transfer(
+        draft["transfer"]["id"],
+        recipients=["editor@example.com"],
+        message="Final cut, as discussed. Notes are in the PDF.",
+        password="harbour-lights",
+    )
+
+    print(sent["transfer"]["url"])
+    ```
+
+    ```bash CLI
+    # Creates, uploads and sends in one go.
+    yungle send final-cut.mov --to editor@example.com \
+      --message "Final cut, as discussed." --password harbour-lights --expires 30
+    ```
+
+    </CodeGroup>
+
+    ```json
+    {
+      "transfer": {
+        "id": "01JB9Q3T5V7X9Z1B3D5F7H9K2M",
+        "slug": "k3v9w2p7q4",
+        "url": "https://yungle.co/t/k3v9w2p7q4",
+        "title": "Final cut, v3",
+        "status": "active",
+        "sizeBytes": 8123456789,
+        "recipients": ["editor@example.com"],
+        "hasPassword": true,
+        "e2ee": false,
+        "downloadCount": 0,
+        "maxDownloads": null,
+        "finalizedAt": "2026-10-11T09:02:14.000Z",
+        "expiresAt": "2026-11-10T09:00:00.000Z",
+        "createdAt": "2026-10-11T09:00:00.000Z"
+      },
+      "notified": ["editor@example.com"]
+    }
+    ```
+
+    Finalizing is safe to retry: a repeated call does not send the link again. Pass every recipient in the first call.
+    {/* TODO verify: recipients added by a later finalize get a row and appear in `notified`, but notifyTransferReady returns early once transfers.notifiedAt is set, so they may never be emailed. */}
+
+    **Who may email.** An API key with `transfers:write` may email recipients. A connection made through OAuth, such as an AI assistant over [MCP](/mcp), may email only if you allowed "Email recipients" when you connected it; otherwise a call with `recipients` returns `403` [`insufficient_scope`](/errors#insufficient_scope) naming `transfers:send`, and the same call without `recipients` still works.
+
+    **Email limits.** A transfer has at most 10 recipients across all calls, and a workspace may email 150 recipients a day. When the daily budget is spent, finalize returns `429` [`email_budget_exhausted`](/errors#email_budget_exhausted) and the transfer is **not** sent. Call finalize again without `recipients` to make the link live, then share it yourself. See [Email limits](/limits#email-limits).
+  </Step>
+
+  <Step title="Change the expiry or the download limit">
+    `PATCH` the transfer with `expiresInDays`, `maxDownloads`, or both. `expiresInDays` counts from now and is clamped to your plan's maximum. On the free plan a transfer cannot outlive {freeDays} days from its creation. `maxDownloads` caps how many download sessions the link allows; `null` lifts the cap.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X PATCH https://yungle.co/api/v1/transfers/01JB9Q3T5V7X9Z1B3D5F7H9K2M \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{ "expiresInDays": 60, "maxDownloads": 5 }'
+    ```
+
+    ```javascript JavaScript
+    const { transfer } = await yungle.updateTransfer(draft.transfer.id, {
+      expiresInDays: 60,
+      maxDownloads: 5,
+    });
+    ```
+
+    ```python Python
+    transfer = yungle.update_transfer(
+        draft["transfer"]["id"], expires_in_days=60, max_downloads=5
+    )["transfer"]
+    ```
+
+    </CodeGroup>
+
+    The response is `{ "transfer": { … } }` with the new `expiresAt` and `maxDownloads`. A revoked or expired transfer returns `410` [`not_editable`](/errors#not_editable).
+  </Step>
+
+  <Step title="Read status and receipts">
+    `GET /transfers/{id}` returns the transfer, its uploaded files with their virus-scan verdict (`scanResult`), and each recipient's status. `GET /transfers/{id}/downloads` adds the download events.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl https://yungle.co/api/v1/transfers/01JB9Q3T5V7X9Z1B3D5F7H9K2M/downloads \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    const receipts = await yungle.transferDownloads(draft.transfer.id);
+
+    for (const r of receipts.recipients) {
+      console.log(r.email, r.bouncedAt ? 'bounced' : r.downloaded ? 'downloaded' : 'not yet');
+    }
+    ```
+
+    ```python Python
+    receipts = yungle.transfer_downloads(draft["transfer"]["id"])
+
+    for r in receipts["recipients"]:
+        state = "bounced" if r["bouncedAt"] else "downloaded" if r["downloaded"] else "not yet"
+        print(r["email"], state)
+    ```
+
+    ```bash CLI
+    yungle status 01JB9Q3T5V7X9Z1B3D5F7H9K2M
+    ```
+
+    </CodeGroup>
+
+    ```json
+    {
+      "downloads": [
+        {
+          "id": "01JBA2M4P6R8T0V2X4Z6B8D0F2",
+          "fileName": null,
+          "recipientEmail": "editor@example.com",
+          "sessionId": "01JBA2M4NZ5Y7W9U1S3Q5O7M9K",
+          "ipTruncated": null,
+          "createdAt": "2026-10-11T14:31:07.000Z"
+        }
+      ],
+      "recipients": [
+        {
+          "id": "01JB9Q4A2C4E6G8J0L2N4P6R8T",
+          "email": "editor@example.com",
+          "notifiedAt": "2026-10-11T09:20:41.000Z",
+          "downloaded": true,
+          "opened": false,
+          "bouncedAt": null,
+          "bounceKind": null
+        }
+      ],
+      "totalDownloads": 1
+    }
+    ```
+
+    - **One visit is one download.** A recipient who saves eight files produces eight events that share one `sessionId`. Count distinct sessions, or use `totalDownloads`, which is the number `maxDownloads` is enforced against.
+    - `fileName` is `null` when the whole transfer was downloaded as a zip.
+    - `recipientEmail` is set when someone used their personal emailed link, and `null` when someone used the link you shared yourself.
+    - `bouncedAt` is set when mail to that address permanently failed.
+    - The list holds the 200 most recent events. `opened` and `ipTruncated` are retired fields, always `false` and `null`.
+
+    To hear about downloads as they happen instead of polling, subscribe to `transfer.downloaded` with a [webhook](/guides/webhooks).
+  </Step>
+
+  <Step title="Revoke it">
+    `DELETE` ends the transfer immediately. Its encryption keys are destroyed before the response returns, so the files cannot be recovered and every link already sent stops working. This cannot be undone.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X DELETE https://yungle.co/api/v1/transfers/01JB9Q3T5V7X9Z1B3D5F7H9K2M \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    await yungle.revokeTransfer(draft.transfer.id);
+    ```
+
+    ```python Python
+    yungle.revoke_transfer(draft["transfer"]["id"])
+    ```
+
+    ```bash CLI
+    yungle revoke 01JB9Q3T5V7X9Z1B3D5F7H9K2M
+    ```
+
+    </CodeGroup>
+
+    The response is `{ "transfer": { … } }` with `status` set to `removed`. The transfer stays in your list as a record of what happened.
+  </Step>
+</Steps>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Upload large files" icon="upload" href="/guides/upload-large-files">
+    Resumable uploads, part sizes and token renewal for your own client.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get `transfer.ready` and `transfer.downloaded` as they happen.
+  </Card>
+  <Card title="Download files" icon="download" href="/guides/download-files">
+    Fetch your own transfer, or a link someone shared with you.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/transfers/create-a-transfer">
+    Every field of every transfer endpoint.
+  </Card>
+</Columns>

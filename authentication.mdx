@@ -1,52 +1,107 @@
 ---
 title: "Authentication"
-description: "How to authenticate with the Yungle API: bearer API keys, the six available scopes, and what each failure status means."
+description: "Create an API key, choose its scopes, and learn which endpoints the free plan reaches and what each authentication error means."
 ---
 
-One credential: an API key, sent as a bearer token on every request.
+Every request to `/api/v1` carries an API key as a bearer token. This page covers creating a key, choosing its scopes, the plan gate, and the errors you get when something is missing.
 
-## Sending the key
+## Send the key
 
-```http
-Authorization: Bearer yk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Pass the key in the `Authorization` header on every request:
+
+```bash
+curl https://yungle.co/api/v1/me \
+  -H "Authorization: Bearer $YUNGLE_API_KEY"
 ```
 
-Keys are created in [Settings → API keys](https://yungle.co/dashboard/settings/api). The full value is shown once, at creation. We store only a keyed hash, so we genuinely cannot show it again or recover it for you — if it is lost, revoke it and make another.
+Keys look like `yk_live_` followed by 43 characters. The SDKs read the key from `YUNGLE_API_KEY` (Python) or take it as `apiKey` (JavaScript). The CLI reads `YUNGLE_API_KEY` before anything else.
 
-## What a key is
+## Create a key
 
-- A key belongs to **one workspace**, chosen when it is created, and can never be switched to another. It acts as that workspace: uploads count against its storage, sends spend its plan.
-- Only the workspace **owner** can create or revoke keys. A key outlives the session that made it, so letting a member mint one would create a credential for an account they can be removed from.
-- Revocation is **immediate**. The key is checked on every request, so nothing is cached and no session can outlive it.
-- A key's *write* access stops the moment the workspace's subscription lapses, and resumes when it does. Reads keep working either way. Nothing needs re-issuing.
+Create keys in [Settings → API keys](https://yungle.co/dashboard/settings/api). Give each key a name you will recognize later, such as `ci-release` or `crm-sync`, and pick its scopes.
+
+- **The key is shown once.** Yungle stores only a hash of it, so it cannot show it again. If you lose a key, revoke it and create another.
+- **A key belongs to your own workspace** and acts as its owner: its uploads count against that workspace's storage and its plan decides what it can do. A member of someone else's workspace cannot create a key for it.
+- **A key does not expire.** It works until you revoke it.
+- **Revoking is immediate.** The key is checked on every request, so the next request with it fails.
 
 ## Scopes
 
-Pick the narrowest set that does the job. A `:write` scope also grants read of the same resource — every write endpoint returns what it changed, so pretending otherwise would be a boundary that does not hold. Scopes never leak across resources.
+A scope grants access to one kind of resource. Pick the narrowest set that does the job.
 
-| Scope | Grants |
-| --- | --- |
-| `transfers:read` | List transfers, read detail and download receipts. |
-| `transfers:write` | Create, upload to, send, amend and revoke transfers. |
-| `collections:read` | List collections, files, folders and guests. |
-| `collections:write` | Create collections, upload files, manage folders and guests. |
-| `contacts:read` | Read the address book. |
-| `contacts:write` | Add, edit and remove contacts. |
+| Scope | Grants | On the free plan |
+| --- | --- | --- |
+| `transfers:read` | List transfers, read one with its files and recipients, read download receipts, get download links for your own transfer. | Yes |
+| `transfers:write` | Create transfers, add and remove files, send them (including emailing recipients), change expiry and download limits, revoke. | Yes |
+| `collections:read` | List collections, their files, folders and guests; get a collection's download links; list and read upload requests. | Yes, but most collection endpoints need a paid plan (see below) |
+| `collections:write` | Create, rename and delete collections; upload and delete files; create folders; invite and remove guests; create, pause and close upload requests. | No |
+| `contacts:read` | List and read contacts. | Yes |
+| `contacts:write` | Create, replace and delete contacts. | Yes |
+| `webhooks:read` | List webhook endpoints, their delivery attempts and their events. | Yes |
+| `webhooks:write` | Create, change and delete endpoints, rotate the signing secret, send a test event, redeliver. | Yes |
 
-<Note>
-`GET /api/v1/me` works with **any** key holding at least one scope — it describes the key itself, so needing a particular resource scope to ask “what am I allowed to do?” would be backwards. A key with no scopes at all is still refused.
-</Note>
+Two rules apply to every scope:
 
-There is no scope for billing, plan changes, workspace members or account deletion, and there will not be one. Those act on a person's own account rather than on a workspace, and a machine credential has no business reaching them.
+- **A `:write` scope includes `:read` of the same resource.** Every write returns what it changed, so a separate read scope would not hold anyway. `transfers:write` alone is enough to send a transfer and read its receipt.
+- **Scopes never cross resources.** `transfers:write` cannot read contacts.
 
-## Failures
+A few endpoints describe the credential or a link rather than a resource, and accept a key with **any** scope: `GET /me`, `GET /me/referral`, `POST /links/resolve` and `GET /imports/{fileId}`. A key with no scopes is refused everywhere.
 
-| Status | Means |
-| --- | --- |
-| `401` | Missing, malformed, unknown, revoked or expired key — deliberately indistinguishable, so a stolen key reveals nothing about which. |
-| `402` | An endpoint the free plan does not include. Transfers and contacts are on the free plan; collections come with Leaf or Tree. |
-| `403` | The key is valid but lacks the scope this endpoint needs. The response names it. |
+There is no scope for billing, plan changes, workspace members, API keys or account deletion. Those stay in the dashboard. See [What the API cannot do](/unsupported).
 
-<Note>
-Treat a key like a password: environment variables or a secrets manager, never a repository. If one leaks, revoke it first and investigate second — revocation takes effect on the next request.
-</Note>
+## Free and paid plans
+
+Every account can use the API. What the free plan reaches:
+
+| Area | Free plan | Leaf or Tree |
+| --- | --- | --- |
+| Transfers: every endpoint | Yes | Yes |
+| Contacts: every endpoint | Yes | Yes |
+| Webhooks: every endpoint | Yes, one endpoint, transfer events only | Yes, all events |
+| `/me`, `/links/resolve`, `/imports/{fileId}` | Yes | Yes |
+| Reading upload requests, collection download links | Yes | Yes |
+| Every other collection endpoint, reads included | No, `402 upgrade_required` | Yes |
+| Creating, pausing and closing upload requests | No, `402 upgrade_required` | Yes |
+
+The plan is checked live on every request. If a subscription lapses, the paid endpoints answer `402` from the next request and work again once it is renewed. Nothing needs re-issuing.
+
+A free workspace cannot create a key with `collections:write`; the dashboard refuses it at creation.
+
+## Authentication errors
+
+| Status | Code | What it means | What to do |
+| --- | --- | --- | --- |
+| `401` | `unauthorized` | The key is missing, malformed, unknown, revoked or expired. All five look the same on purpose, so a leaked key reveals nothing. | Check the header and the key. |
+| `402` | `upgrade_required` | The endpoint needs a paid plan, and the workspace is on the free plan. | Upgrade, or do not call it. Retrying will not help. |
+| `403` | `insufficient_scope` | The key is valid but lacks the scope. `details.required` names the scope; `details.granted` lists what the key has. | Create a key with that scope. |
+| `429` | `rate_limited` | Too many requests without a valid key from your address (60 a minute), or a rate limit on a valid key. | Wait for `Retry-After`. See [Limits](/limits). |
+
+[Errors](/errors) lists every error code.
+
+## Keep keys safe
+
+- Store keys in environment variables or a secrets manager, never in a repository.
+- Use one key per integration, so you can revoke one without breaking the others.
+- Do not ship a key to a browser or a mobile app. A key acts as your whole workspace, and the API is server-to-server.
+- If a key leaks, revoke it first and investigate second.
+
+## AI assistants use OAuth instead
+
+When you connect Claude, ChatGPT, Cursor or another assistant to `https://yungle.co/mcp`, you sign in through your browser and approve what the assistant may do. No API key is involved, and emailing recipients is a separate permission you grant on the consent screen. See [MCP](/mcp).
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Use your key to send a first transfer.
+  </Card>
+  <Card title="Limits" icon="gauge" href="/limits">
+    Rate limits, email budgets and size ceilings.
+  </Card>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    Every error code and how to handle it.
+  </Card>
+  <Card title="MCP" icon="robot" href="/mcp">
+    Connect an AI assistant with OAuth.
+  </Card>
+</Columns>

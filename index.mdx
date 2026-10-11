@@ -1,99 +1,99 @@
 ---
-title: "Yungle API"
-sidebarTitle: "Overview"
-description: "Send file transfers, build client collections and sync contacts from your own code. A JSON API with a command-line client and an MCP server; transfers work on the free plan."
+title: "Yungle developer docs"
+sidebarTitle: "Introduction"
+description: "Send files, build client collections and collect uploads from your own code, a terminal or an AI assistant, over one EU-hosted API."
 ---
 
-import { freeTransfer, apiFreeUsage, apiFreeCalls, apiPricePerGb } from '/snippets/generated/plan-facts.mdx';
+import { freeTransfer, freeDays, leafPrice, leafQuota, treePrice, treeQuota, apiFreeUsage, apiFreeCalls, apiPricePerGb } from '/snippets/generated/plan-facts.mdx';
 
-Delivery is usually a step in a pipeline, not a website you visit. The API lets your own systems do it: create a transfer, stream the bytes, send it, and find out who collected it. Every account can use it: transfers, contacts and webhooks on the free plan, collections on a paid one.
+Yungle is a private, EU-hosted file transfer service. These docs show you how to drive it from your own code, from a terminal or CI job, or from an AI assistant.
 
-## Ways in
+<Columns cols={3}>
+  <Card title="Build with the API" icon="code" href="/quickstart">
+    Send your first transfer with curl, JavaScript or Python, and read its download receipt.
+  </Card>
+  <Card title="Send from a terminal or CI" icon="terminal" href="/cli">
+    Install `yungle-cli` and run `yungle send ./dist`. Resumable, scriptable, with `--json` output.
+  </Card>
+  <Card title="Connect an AI assistant" icon="robot" href="/mcp">
+    Add `https://yungle.co/mcp` to Claude, ChatGPT, Cursor or another MCP client and sign in. No key needed.
+  </Card>
+</Columns>
 
-- **From a terminal:** `npm install -g yungle-cli`, `yungle login`, then `yungle send ./dist`. [More](/cli)
-- **From an AI assistant:** add `https://yungle.co/mcp` as a remote MCP server and sign in. No key. [More](/mcp)
-- **From your code:** `npm install yungle-client`, `pip install yungle`, or any HTTP client against the [reference](/api-reference).
-- **From CI:** the [GitHub Action](https://github.com/marketplace/actions/send-files-with-yungle) sends a build's output and hands the link to the next step.
+## What you can do
 
-The CLI, the MCP server and the TypeScript and Python SDKs are open source (MIT) on [GitHub](https://github.com/heindewilde/yungle-clients). Issues and pull requests are welcome there.
+| You want to | Use | Guide |
+| --- | --- | --- |
+| Send files to someone as a link that expires | a **transfer** | [Send a transfer](/guides/send-a-transfer) |
+| Keep files for a client in folders, with invited guests | a **collection** | [Client collections](/guides/client-collections) |
+| Let someone else upload files to you | an **upload request** | [Receive files](/guides/receive-files) |
+| Know when a transfer is downloaded or a file arrives | a **webhook** | [Webhooks](/guides/webhooks) |
+| Keep an address book in sync | **contacts** | [Contacts](/guides/contacts) |
 
-## Quickstart
+Each of these words means one thing everywhere in these docs. [Concepts](/concepts) defines them.
 
-Create a key in [Settings → API keys](https://yungle.co/dashboard/settings/api), then check it works:
+## Free plan and paid plans
 
-```bash
-curl https://yungle.co/api/v1/me \
-  -H "Authorization: Bearer $YUNGLE_API_KEY"
+Every account can use the API, the CLI and the MCP server. What a workspace can reach depends on its plan.
+
+| | Free | Leaf | Tree |
+| --- | --- | --- | --- |
+| Price | €0 | {leafPrice} a month | {treePrice} a month |
+| Transfers and contacts | Yes | Yes | Yes |
+| Webhooks | 1 endpoint, transfer events | 10 endpoints, all events | 10 endpoints, all events |
+| Largest transfer | {freeTransfer} | {leafQuota} | {treeQuota} |
+| Transfer lifetime | {freeDays} days | You choose | You choose |
+| Collections and upload requests | No | Yes, {leafQuota} of storage | Yes, {treeQuota} of storage |
+
+Uploads made through the API are metered apart from the plans, the same way on every tier: the first {apiFreeUsage} each month are free, then {apiPricePerGb} per GB from prepaid credit. Downloads are never metered. [Pricing](https://yungle.co/pricing) has the full plan details.
+
+## The base URL
+
+Every endpoint lives under one base URL, takes JSON and returns JSON:
+
+```text
+https://yungle.co/api/v1
 ```
 
-Sending a file is three calls plus the upload itself — or one command with the CLI:
+You authenticate with an API key sent as a bearer token. [Authentication](/authentication) covers keys and scopes. The full list of endpoints is in the [API reference](/api-reference), generated from the [OpenAPI 3.1 document](https://yungle.co/api/v1/openapi.json).
 
-<CodeGroup>
+`/api/v1` changes only by adding things. New endpoints and new response fields can appear; existing fields keep their meaning, and no new required request field is added. A breaking change would get `/api/v2`, and v1 would keep working.
 
-```bash curl
-# 1. Create the draft. Nothing is live and nobody is emailed yet.
-curl -X POST https://yungle.co/api/v1/transfers \
-  -H "Authorization: Bearer $YUNGLE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"files":[{"name":"final-cut.mov","size":8123456789}]}'
-
-# → { "transfer": { "id": "01J…", "slug": "…" },
-#     "tusEndpoint": "https://yungle.co/files",
-#     "files": [ { "id": "01J…", "uploadToken": "…" } ] }
-
-# 2. Stream the bytes to tusEndpoint (resumable — see Uploading files).
-
-# 3. Send it.
-curl -X POST https://yungle.co/api/v1/transfers/01J…/finalize \
-  -H "Authorization: Bearer $YUNGLE_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"recipients":["client@example.com"],"message":"Final cut attached."}'
-```
-
-```bash CLI
-npm install -g yungle-cli
-yungle send final-cut.mov --to client@example.com --message "Final cut attached."
-```
-
-</CodeGroup>
-
-## How it is shaped
-
-- **Base URL** is `https://yungle.co/api/v1`. Everything is JSON in and JSON out.
-- **File bytes never go through this API.** Endpoints that accept files hand you a tus endpoint and a per-file token; you stream to that. It is resumable at part granularity, which is the point — a 100 GB upload should survive a dropped connection.
-- **Creating and sending are separate calls.** A transfer is created as a draft, so bytes land before anyone is emailed a link.
-- **Resources are addressed by id, never by slug.** A share slug is a capability — anyone holding it can download — so it is returned but never used as an address.
-
-## Versioning
-
-`/api/v1` is additive-only. New fields and new endpoints may appear; existing fields will not change meaning or disappear, and no new required request field will be added. A change that would break a client gets `/api/v2` instead, and v1 keeps working.
-
-The machine-readable contract lives at [/api/v1/openapi.json](https://yungle.co/api/v1/openapi.json) — OpenAPI 3.1, generated from the same definitions the server validates with, so it cannot drift from the running code. It needs no key to read.
+The CLI, the MCP server and the JavaScript and Python SDKs are open source (MIT) on [GitHub](https://github.com/heindewilde/yungle-clients).
 
 {/*
   Reliability, stated plainly rather than flatteringly.
 
-  Yungle runs on a single VM with no failover, and had a 20-minute outage
-  in July when a full disk took Postgres down. A developer deciding whether
-  to build on this deserves to know that before they do, not after — and a
-  page that quietly omits it is worse than one that has no uptime section
-  at all, because omission reads as a claim.
+  Yungle runs on a single VM with no failover, and has had outages (a full disk
+  once took Postgres down for 20 minutes). A developer deciding whether to build
+  on this deserves to know that before they do, not after.
 
-  Do NOT soften this into an uptime figure or a target. Publishing a number
-  we have no redundancy to defend is how "best effort" quietly becomes an
+  Do NOT soften this into an uptime figure or a target. Publishing a number we
+  have no redundancy to defend is how "best effort" quietly becomes an
   expectation, and the first outage then costs trust rather than an hour.
 */}
 
 ## What we promise, and what we don't
 
-Yungle is small and self-hosted in the EU. There is **no SLA and no uptime guarantee**: it runs on a single server with no failover, so a hardware fault or a bad deploy means downtime rather than a graceful failover. It has happened, and it will happen again.
+Yungle is small and self-hosted in the EU. There is **no SLA and no uptime guarantee**: it runs on a single server with no failover, so a hardware fault or a bad deploy means downtime. It has happened, and it will happen again.
 
-What you do get: your files are encrypted at rest, nothing is sent to a US cloud, and every byte is served from the EU under a real DPA. If your integration needs a contractual uptime guarantee, Yungle is not the right choice today — and we would rather you found that out here than during an incident.
+What you do get: your files are always encrypted, nothing is sent to a US cloud, and every byte is served from the EU under a data processing agreement. If your integration needs a contractual uptime guarantee, Yungle is not the right choice today, and it is better that you find that out here than during an incident.
 
-Free usage is genuinely free: <code>{apiFreeUsage}</code> of uploads through the API each month, <code>{apiFreeCalls}</code> calls, and <code>{freeTransfer}</code> per transfer — no card, no trial clock. Beyond that it is <code>{apiPricePerGb}</code> per GB uploaded, paid from credit you top up in advance. It is priced apart from the plans, so it works the same on Free, Leaf and Tree.
+Free usage is free: {apiFreeUsage} of API uploads each month, {apiFreeCalls} calls, and {freeTransfer} per transfer, with no card and no trial clock. Beyond the upload allowance, you pay {apiPricePerGb} per GB from credit you top up in advance.
 
-Prepaid on purpose. Nothing is ever served that has not been paid for, which means no invoice can arrive for traffic you did not expect and a runaway script cannot spend money you have not already given us. When the balance runs out your next upload is refused rather than your recipient's download failing — the refusal lands on you, where you can see and fix it, never on someone waiting for a file. What your recipients download is never metered at all. The call limit is an abuse guard rather than a price: it sits far above what a working integration uses, because a limit that trips in normal use is a support ticket, not a safeguard.
+Credit is prepaid on purpose. No invoice can arrive for traffic you did not expect, and a runaway script cannot spend money you have not put in. When the balance runs out, your next upload is refused before any bytes move, so the failure lands on you, where you can see it, and never on a recipient waiting for a file. The call allowance is an abuse guard rather than a price, set far above what a working integration uses.
 
 <Note>
-The vault and end-to-end encrypted transfers are not reachable from the API, and cannot be — their keys are derived in your browser and never sent to us. [What the API cannot do](/unsupported) explains where that boundary is.
+The vault and end-to-end encrypted transfers are encrypted in the client with keys Yungle never receives, so the API can never read them. [What the API cannot do](/unsupported) explains where that boundary is.
 </Note>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send a transfer and read its receipt in about five minutes.
+  </Card>
+  <Card title="Concepts" icon="book-open" href="/concepts">
+    Workspaces, transfers, collections and the rest, in one page.
+  </Card>
+</Columns>

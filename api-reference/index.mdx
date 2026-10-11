@@ -1,16 +1,61 @@
 ---
 title: "API reference"
 sidebarTitle: "Introduction"
-description: "Every endpoint in the Yungle file transfer API, with parameters and request bodies, generated from the OpenAPI 3.1 document."
+description: "Every endpoint in the Yungle API with its parameters, request body and responses, generated from the OpenAPI 3.1 document."
 ---
 
-Every endpoint in `/api/v1`, generated from the [OpenAPI 3.1 document](https://yungle.co/api/v1/openapi.json) the server validates with. Authenticate with `Authorization: Bearer yk_live_…`. Lists that grow without bound take `limit` and `cursor` and return `nextCursor`. Any `POST` accepts an `Idempotency-Key` header so it is safe to retry (see [Errors](/errors)).
+This tab lists every endpoint in `/api/v1`. Each page is generated from the [OpenAPI 3.1 document](https://yungle.co/api/v1/openapi.json) that the server validates requests with, so it matches the running API.
 
-## How it is shaped
+## Base URL
 
-- **Base URL** is `https://yungle.co/api/v1`. Everything is JSON in and JSON out.
-- **Authentication** is an API key sent as a bearer token on every request. Scopes and failure statuses are on [Authentication](/authentication).
-- **Errors** share one shape and a stable `code`; every code is listed on [Errors](/errors).
-- **Limits** on requests and outbound email are on [Rate and email limits](/limits).
+```text
+https://yungle.co/api/v1
+```
 
-The endpoints are grouped by resource in the sidebar, in the same groups as the OpenAPI document's tags.
+Requests and responses are JSON. File bytes are not: you upload them over tus to the `tusEndpoint` a create call returns. See [Upload large files](/guides/upload-large-files).
+
+## Authentication
+
+Send an API key as a bearer token on every request:
+
+```bash
+curl https://yungle.co/api/v1/me \
+  -H "Authorization: Bearer $YUNGLE_API_KEY"
+```
+
+An endpoint needs the read or write scope of its resource, such as `transfers:read` for a `GET` on a transfer and `transfers:write` to change one. [Authentication](/authentication) lists what each scope covers and which endpoints the free plan reaches.
+
+## How endpoints are grouped
+
+The sidebar follows the tags in the OpenAPI document:
+
+| Group | What it covers |
+| --- | --- |
+| Account | The workspace, plan and key behind a request; your referral link. |
+| Transfers | Create, upload to, send, change and revoke transfers; download receipts; URL imports. |
+| Collections | Collections, their files, folders and guests. Needs a paid plan. |
+| Contacts | The workspace's address book. |
+| Upload requests | Public upload pages that put files into a collection. |
+| Downloads | Signed download URLs for a link someone shared with you. |
+| Webhooks | Endpoints, delivery attempts, and events to pull. |
+
+## The OpenAPI document
+
+The document is at [https://yungle.co/api/v1/openapi.json](https://yungle.co/api/v1/openapi.json). It needs no key to read. Use it to generate a client, import the API into Postman or Insomnia, or give an AI coding tool the exact contract.
+
+## Before you build
+
+<Columns cols={2}>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    The error shape, every code, and when to retry.
+  </Card>
+  <Card title="Limits" icon="gauge" href="/limits">
+    Rate limits, email budgets and size ceilings.
+  </Card>
+  <Card title="Pagination and idempotency" icon="arrows-rotate" href="/pagination-and-idempotency">
+    Walk long lists and retry writes safely.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send a transfer end to end before you read the reference.
+  </Card>
+</Columns>

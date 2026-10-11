@@ -4,7 +4,7 @@ The source of https://docs.yungle.co, built by Mintlify from `main`. The product
 app repo (heindewilde/yungle); the CLI, MCP server and SDKs in heindewilde/yungle-clients.
 
 Install the Mintlify skill before editing: `npx skills add https://mintlify.com/docs`. Check every change
-with `node scripts/copy-guard.mjs`, `mint validate` and `mint broken-links --check-anchors` (CI runs all three).
+with `node scripts/copy-guard.mjs`, `mint validate` and `node scripts/links.mjs` (CI runs all three).
 
 ## Never edit `snippets/generated/`
 

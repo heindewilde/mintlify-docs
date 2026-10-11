@@ -1,0 +1,10 @@
+/* Yungle's faces and shapes, so docs.yungle.co reads as the same product as yungle.co.
+
+   Pally and Satoshi are Fontshare faces, served from Fontshare's own CDN under its free licence.
+   The font files must never be committed here: this repo is public, and the licence does not
+   allow redistributing them. docs.json names the families; this adds the other weights. */
+@import url('https://api.fontshare.com/v2/css?f[]=pally@500,700&f[]=satoshi@400,500,700&display=swap');
+
+/* The site's buttons are pills. */
+#topbar-cta-button a,
+#topbar-cta-button a > span { border-radius: 9999px; }

@@ -1,0 +1,136 @@
+---
+title: "Pagination and idempotency"
+description: "Walk long lists with limit, cursor and nextCursor, and make POST requests safe to retry with an Idempotency-Key header."
+---
+
+Two lists in the API can grow without bound and are paged with a cursor. Any `POST` can be made safe to retry with an `Idempotency-Key` header. This page covers both.
+
+## Pagination
+
+### Which lists are paged
+
+| Endpoint | Order | Default page | Largest page |
+| --- | --- | --- | --- |
+| `GET /transfers` | Newest first | 100 | 500 |
+| `GET /collections/{id}/files` | Oldest first | Everything, unless you pass `limit` | 1,000 |
+| `GET /webhooks/{id}/events` | Oldest first | 100 | 500 |
+
+Every other list returns everything in one response. Download receipts return the 200 most recent events.
+
+### How it works
+
+- Pass `limit` to set the page size, from 1 to the largest page above. Anything else returns `400 invalid_request`.
+- Each page returns `nextCursor`. Pass it back unchanged as `cursor` to get the next page.
+- `nextCursor` is `null` on the last page.
+- Treat the cursor as opaque. Never build or edit one; a cursor the API did not issue returns `400 invalid_request`.
+
+Webhook events are the exception to the last-page rule: `nextCursor` is returned on every page, so a poller can resume from it later, and `hasMore` tells you whether there is more now. [Webhooks](/guides/webhooks) covers polling a pull endpoint.
+
+### Walk every page
+
+<CodeGroup>
+
+```bash curl
+cursor=""
+while :; do
+  page=$(curl -s "https://yungle.co/api/v1/transfers?limit=500${cursor:+&cursor=$cursor}" \
+    -H "Authorization: Bearer $YUNGLE_API_KEY")
+  echo "$page" | jq -r '.transfers[] | "\(.id)  \(.title // "-")  \(.status)"'
+  cursor=$(echo "$page" | jq -r '.nextCursor // empty')
+  [ -z "$cursor" ] && break
+done
+```
+
+```javascript JavaScript
+import { YungleClient } from 'yungle-client';
+
+const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+// allTransfers() fetches page after page as you iterate.
+for await (const t of yungle.allTransfers()) {
+  console.log(t.id, t.title ?? '-', t.status);
+}
+
+// Or one page at a time:
+const { transfers, nextCursor } = await yungle.listTransfers({ limit: 100 });
+```
+
+```python Python
+from yungle import Yungle
+
+yungle = Yungle()
+
+# all_transfers() fetches page after page as you iterate.
+for t in yungle.all_transfers():
+    print(t["id"], t["title"] or "-", t["status"])
+
+# Or one page at a time:
+page = yungle.list_transfers(limit=100)
+next_cursor = page["nextCursor"]
+```
+
+</CodeGroup>
+
+A page looks like this:
+
+```json
+{
+  "transfers": [
+    { "id": "01JA8Z6Q2K3M4N5P6R7S8T9V0W", "title": "Q3 report", "status": "active", ... }
+  ],
+  "nextCursor": "v1.MDFKQThaNlEySzNNNE41UDZSN1M4VDlWMFc"
+}
+```
+
+For collection files, use `allCollectionFiles(id)` in JavaScript or `all_collection_files(id)` in Python the same way.
+
+## Idempotency
+
+A network failure can hide whether a request succeeded. Retrying a `GET` or `DELETE` is always safe. Retrying a `POST` could create something twice, unless you send an `Idempotency-Key`.
+
+### Send a key
+
+Generate a fresh UUID for each logical request, and send the same UUID on every retry of that request:
+
+```bash
+curl -X POST https://yungle.co/api/v1/transfers \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 6f1c2a9e-4b7d-4e2a-9c3f-8d5e1b0a7c64" \
+  -d '{"title":"Q3 report","files":[{"name":"report.pdf","size":2481152}]}'
+```
+
+The SDKs do this for you: every `POST` carries an `Idempotency-Key`, reused on each of its retries.
+
+### What happens on a retry
+
+| Situation | Response |
+| --- | --- |
+| The first request succeeded | The original response, byte for byte, with the header `Idempotent-Replayed: true`. Nothing is created twice. |
+| The first request is still running | `409 conflict` with `details.reason` `idempotency_in_progress` and `Retry-After: 1`. Retry to get its result. |
+| The key was used for a different request | `409 conflict` with `details.reason` `idempotency_key_reused`. Use a new key. |
+| The first request failed | It runs again. Only successful responses are remembered. |
+
+### Rules
+
+- **Only `POST` reads the header.** Other methods ignore it.
+- **A key is remembered for 24 hours** after its first use.
+- **Idempotency keys are scoped to the workspace.** Two API keys in the same workspace share them.
+- **A key is bound to the request**: its method, path and exact body. Reusing it for anything else gets `idempotency_key_reused`.
+- **The format** is 1 to 255 printable ASCII characters, with no spaces. A UUID works. Anything else returns `400 invalid_request`.
+
+### Requests that are safe to retry without a key
+
+- **Sending a transfer.** Finalizing an already-sent transfer does not send it again or email anyone twice.
+- **Creating a transfer** makes a new draft each time. A draft that is never sent is deleted after 24 hours, so a duplicate costs nothing, but a key avoids it.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    Which errors to retry, and how.
+  </Card>
+  <Card title="Limits" icon="gauge" href="/limits">
+    Rate limits and the `RateLimit` headers.
+  </Card>
+</Columns>

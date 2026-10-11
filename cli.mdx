@@ -1,42 +1,216 @@
 ---
-title: "CLI reference"
-description: "Every yungle command and flag: send files from a terminal, push folders into collections, list and revoke transfers, and connect an AI assistant."
+title: "CLI"
+description: "Install the yungle CLI, sign in, send files and folders resumably, push into collections, script it with --json, and look up every command."
 ---
 
 import CliCommands from '/snippets/generated/cli-commands.mdx';
 
-`yungle` sends files and folders from a terminal, a script or a build server, and resumes an interrupted upload when you run the same command again. Every command takes `--json`, so the same tool serves a person and a pipeline.
+`yungle` sends files and folders from a terminal, a script or a build server. An interrupted upload continues when you run the same command again, and `--json` turns every command into something a pipeline can read.
 
-## Install and sign in
+## Prerequisites
 
-```bash
-npm install -g yungle-cli     # or: brew install heindewilde/yungle/yungle
-yungle login           # opens your browser to sign in
+- Node 22 or newer, if you install with npm.
+- A Yungle account. Sending transfers works on the free plan. Collections, upload requests and `watch` need a paid plan ([pricing](https://yungle.co/pricing)).
+- `yungle get` needs neither: anyone with a link can download it.
+
+## Install
+
+<CodeGroup>
+
+```bash npm
+npm install -g yungle-cli
 ```
 
-`yungle login` signs you in through the browser, so there is nothing to copy. That session makes links but never emails anyone: a sign-in code can be phished, so it cannot make Yungle mail strangers. To email recipients with `--to`, and on a build server, create a key in Settings → API keys and use `yungle login --key` or set it as `YUNGLE_API_KEY`; the environment variable is read first and no login is needed.
+```bash Homebrew
+brew install heindewilde/yungle/yungle
+```
 
-## Commands
+</CodeGroup>
 
-<CliCommands />
+Check it works:
 
-## Scripting it
+```bash
+yungle --version
+```
 
-With `--json`, the result is one JSON object on stdout. Progress and diagnostics go to stderr, so a pipe into `jq` stays clean:
+## Sign in
+
+There are two ways to sign in. Which one you need depends on whether Yungle should email anyone for you.
+
+| | Browser sign-in | API key |
+| --- | --- | --- |
+| How | `yungle login` | `yungle login --key`, or set `YUNGLE_API_KEY` |
+| Where | Your own machine, including over SSH | Servers, CI, anywhere without a person present |
+| Makes share links | Yes | Yes |
+| Emails recipients (`--to`) | No | Yes, with the `transfers:write` scope |
+| Registers webhooks | No | Yes, with the `webhooks:write` scope |
+
+### Browser sign-in
+
+```bash
+yungle login
+```
+
+The CLI opens your browser, you confirm a code, and the session is saved in `~/.config/yungle/config.json` (readable only by you). It renews itself, including during a long upload. Add `--no-browser` to print the link instead, for example when the browser is on another machine.
+
+A browser sign-in makes links but never emails anyone. Signing in with a code can be phished ("enter this code" is the whole attack), so that session cannot make Yungle mail strangers or register a webhook. If you pass `--to` with a browser sign-in, the CLI notices before uploading and offers to send a link instead.
+
+### API key
+
+Create a key in [Settings → API keys](https://yungle.co/dashboard/settings/api) (or run `yungle open keys`), then save it:
+
+```bash
+yungle login --key yk_live_…
+```
+
+The CLI checks the key against Yungle before saving it. On a server or in CI, set the environment variable instead. `YUNGLE_API_KEY` is always read first, so no login step is needed:
+
+```bash
+export YUNGLE_API_KEY=yk_live_…
+yungle whoami
+```
+
+See [Authentication](/authentication) for the scopes a key can have.
+
+## Everyday tasks
+
+### Send a file or folder
+
+```bash
+yungle send ~/Shoot
+```
+
+It uploads, prints the share link, and emails nobody. You pass the link on yourself.
+
+- Folder structure is kept: `Shoot/Ceremony/Raw` arrives as `Shoot/Ceremony/Raw`.
+- Hidden files (names starting with `.`) are skipped when the CLI walks a folder, so a `.DS_Store` in every subfolder stays behind. A hidden file you name directly is sent.
+- `--expires 90` sets the lifetime in days. A value beyond your plan's maximum is clamped to it, not rejected.
+- `--password <text>` makes recipients enter a password. `--title <text>` labels the transfer in your dashboard.
+
+To include a file that is already online (a presigned S3 link, a CDN URL), add `--from-url <url>`. Yungle fetches it itself, and the CLI waits until it has arrived before the transfer goes live.
+
+### Send to people
+
+```bash
+yungle send ~/Shoot --to anna@example.com --to joost@example.com \
+  --message "Final selects attached."
+```
+
+`--to` takes one address per flag or a comma-separated list. It needs an [API key](#api-key); a browser sign-in cannot email.
+
+### Resume an interrupted upload
+
+Run the same command again with the same files. The CLI continues the existing transfer from the last committed part, instead of starting a second one.
+
+```bash
+yungle send ~/Shoot --to anna@example.com     # killed at 92%
+yungle send ~/Shoot --to anna@example.com     # continues the same transfer
+```
+
+<Note>
+The resume state lives in `~/.cache/yungle/`, keyed on each file's path, size and modification time, because that is all a second run has to go on. If you change a file between runs, the upload starts over. Resume state expires after two hours, the lifetime of the upload permissions it holds.
+</Note>
+
+### See who downloaded it
+
+```bash
+yungle status N6P8R1ST
+```
+
+It shows, per recipient, whether they were emailed, downloaded, or bounced, plus the link and when it expires. An id can be the full id, its last 6–8 characters, or the link. With no id, you pick from your recent transfers.
+
+### Push into a collection
+
+Collections need a paid plan. Find the collection's id, then push files or folders into it:
+
+```bash
+yungle collections
+yungle push ~/Shoot/Selects --collection <collection-id>
+```
+
+Add `--folder <folder-id>` to upload into a folder of the collection. A push resumes like a send.
+
+### Watch a folder
+
+For a render box writing frames, a card reader or an export folder:
+
+```bash
+yungle watch ~/Renders --collection <collection-id>
+```
+
+It looks every 10 seconds (`--interval` to change), and uploads a file only once it has stopped changing, so a half-written frame never goes up. What it uploaded is remembered across restarts. Files already in the folder when it starts are left alone unless you pass `--existing`. Stop it with Ctrl-C.
+
+### Download a link
+
+```bash
+yungle get https://yungle.co/t/<slug> --out ~/Downloads
+```
+
+No account is needed: the link is the credential. Folders are kept, the download resumes if interrupted, and the CLI asks for the password if the transfer has one. `yungle pull --collection <collection-id>` downloads a whole collection of your own the same way.
+
+### Use it in a script
+
+With `--json`, every command prints one JSON object on stdout. Progress and diagnostics go to stderr, so a pipe stays clean:
 
 ```bash
 URL=$(yungle send ./render.mp4 --json | jq -r .url)
-echo "Ready: $URL"
+curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"Render ready: $URL\"}"
 ```
 
-`send --json` prints `id`, `url`, `expiresAt` and `notified` (the addresses that were emailed). `push --json` prints the `collection` id, the number `uploaded` and the collection’s `url`.
+`send --json` prints:
 
-<Note>
-The CLI cannot reach your vault or send end-to-end encrypted transfers: both need a key derived in your browser, which by design never reaches Yungle.
-</Note>
+```json
+{
+  "id": "01J8Z3M9Q0W4X7K2B5N6P8R1ST",
+  "url": "https://yungle.co/t/<slug>",
+  "expiresAt": "2026-10-18T09:30:00.000Z",
+  "notified": ["anna@example.com"]
+}
+```
 
-## See also
+`notified` lists the addresses that were emailed. `push --json` prints `collection` (the id), `uploaded` (the number of files) and the collection's `url`. `watch --json` prints one line of JSON per uploaded file.
 
-- [Send large files from the command line](/guides/send-large-files-from-the-command-line)
-- [CI artefacts to a client](/recipes/ci-artefacts) and [a nightly report hand-off](/recipes/nightly-report)
-- Source: [yungle-cli on GitHub](https://github.com/heindewilde/yungle-clients/tree/main/apps/cli), MIT licensed.
+How the CLI behaves depends on where it runs:
+
+| | At a terminal | In a pipe or CI | With `--json` |
+| --- | --- | --- | --- |
+| Output | Colour, tables, a progress bar | Plain text; `send` prints only the link | One JSON object on stdout |
+| Missing arguments | Asks for them | Fails with a usage hint | Fails with a usage hint |
+| Confirmations | Asks | Never asks | Never asks |
+
+Use `--yes` to skip confirmations in a script that runs at a terminal. A failure with `--json` prints `{ "error": { "code", "message" } }` on stdout.
+
+Exit codes: `0` success, `1` failure, `2` usage error, `130` cancelled.
+
+For a complete CI job, see [Send from CI](/guides/send-from-ci).
+
+## Command reference
+
+Run `yungle <command> --help` for examples of any command. Old spellings (`auth login`, `ls transfers`, `rm transfer`) still work.
+
+<CliCommands />
+
+## What the CLI cannot do
+
+- **Reach your vault.** Its key is derived in your browser and never reaches Yungle.
+- **Open end-to-end encrypted transfers.** `yungle get` on such a link says so and points you to the browser.
+- **Wait for a download.** To act when someone downloads, poll `yungle status`, or subscribe to the `transfer.downloaded` [webhook](/guides/webhooks).
+
+The CLI is open source (MIT): [yungle-cli on GitHub](https://github.com/heindewilde/yungle-clients/tree/main/apps/cli).
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send from CI" icon="workflow" href="/guides/send-from-ci">
+    Deliver build artefacts to a client from a pipeline.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    API keys, scopes, and what each one allows.
+  </Card>
+  <Card title="MCP server" icon="bot" href="/mcp">
+    Let an AI assistant answer questions about your files.
+  </Card>
+  <Card title="Upload large files" icon="upload" href="/guides/upload-large-files">
+    How resumable uploads work, if you build your own.
+  </Card>
+</Columns>

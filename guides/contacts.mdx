@@ -1,0 +1,265 @@
+---
+title: "Manage contacts"
+sidebarTitle: "Contacts"
+description: "Read and write your workspace address book through the API, and keep it in step with a CRM without creating duplicates."
+---
+
+[Contacts](/concepts#contact) are your workspace's address book: the people you send transfers to and invite to collections. Use the API to fill it from the system you already keep people in, such as a CRM, so they are there to pick when you send.
+
+A contact grants nothing on its own. It is a convenience for addressing people, not a permission.
+
+## Prerequisites
+
+- An [API key](/authentication) with `contacts:read` and `contacts:write`, exported as `YUNGLE_API_KEY`. Contacts work on every plan, the free one included.
+- Optional: `npm install yungle-client` or `pip install yungle`.
+
+## Steps
+
+<Steps>
+  <Step title="Create a contact">
+    `email` is the only required field. Yungle lowercases it, and it is unique per workspace. The other fields are `firstName`, `lastName`, `company`, `phone` and `type`, each up to 200 characters.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/contacts \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "firstName": "Sanne",
+        "lastName": "de Vries",
+        "company": "De Vries BV",
+        "email": "sanne@devries.example",
+        "phone": "+31 20 555 0134",
+        "type": "client"
+      }'
+    ```
+
+    ```javascript JavaScript
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const { contact } = await yungle.createContact({
+      firstName: 'Sanne',
+      lastName: 'de Vries',
+      company: 'De Vries BV',
+      email: 'sanne@devries.example',
+      phone: '+31 20 555 0134',
+      type: 'client',
+    });
+    ```
+
+    ```python Python
+    from yungle import Yungle
+
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+
+    contact = yungle.create_contact(
+        "sanne@devries.example",
+        first_name="Sanne",
+        last_name="de Vries",
+        company="De Vries BV",
+        phone="+31 20 555 0134",
+        type="client",
+    )["contact"]
+    ```
+
+    </CodeGroup>
+
+    The response is `201`:
+
+    ```json
+    {
+      "contact": {
+        "id": "01JBD4F6H8K0M2P4R6T8V0X2Z4",
+        "firstName": "Sanne",
+        "lastName": "de Vries",
+        "company": "De Vries BV",
+        "email": "sanne@devries.example",
+        "phone": "+31 20 555 0134",
+        "type": "client",
+        "createdAt": "2026-10-11T09:00:00.000Z",
+        "updatedAt": "2026-10-11T09:00:00.000Z"
+      }
+    }
+    ```
+
+    An address already in the book returns `409` [`conflict`](/errors#conflict). A missing or invalid address, or a field over 200 characters, returns `400` [`invalid_request`](/errors#invalid_request) with `details.reason`.
+  </Step>
+
+  <Step title="Sync from your CRM">
+    There is no bulk endpoint. Create contacts one at a time and treat `409 conflict` as "already there". Running the sync again then changes nothing, so it is safe to schedule.
+
+    <CodeGroup>
+
+    ```javascript JavaScript
+    import { YungleClient, YungleApiError } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    // fromCrm: [{ first, last, company, email }, …] from your own system
+    for (const person of fromCrm) {
+      try {
+        await yungle.createContact({
+          firstName: person.first,
+          lastName: person.last,
+          company: person.company,
+          email: person.email,
+          type: 'client',
+        });
+      } catch (err) {
+        if (err instanceof YungleApiError && err.code === 'conflict') continue; // already in the book
+        throw err;
+      }
+    }
+    ```
+
+    ```python Python
+    from yungle import Yungle, YungleError
+
+    yungle = Yungle()
+
+    # from_crm: [{"first": …, "last": …, "company": …, "email": …}, …]
+    for person in from_crm:
+        try:
+            yungle.create_contact(
+                person["email"],
+                first_name=person["first"],
+                last_name=person["last"],
+                company=person["company"],
+                type="client",
+            )
+        except YungleError as err:
+            if err.code == "conflict":
+                continue  # already in the book
+            raise
+    ```
+
+    ```bash curl
+    # One request per person; a 409 means the address is already there.
+    status=$(curl -s -o /dev/null -w "%{http_code}" -X POST https://yungle.co/api/v1/contacts \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"firstName":"Sanne","lastName":"de Vries","email":"sanne@devries.example","type":"client"}')
+    [ "$status" = 201 ] || [ "$status" = 409 ] || echo "failed: $status"
+    ```
+
+    </CodeGroup>
+
+    Both SDKs retry throttled requests (`429`) for you, honouring `Retry-After`. A key allows 120 requests a minute on a paid plan and 12 on the free plan; see [Limits](/limits).
+
+    To push changes for people who already exist, read the book once with `GET /contacts`, map each `email` to its `id`, and `PATCH` the ones that differ (next step).
+  </Step>
+
+  <Step title="Update a contact">
+    `PATCH /contacts/{id}` replaces the whole contact: **any field you leave out is cleared**. Read the contact, change what you need, and send every field back.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X PATCH https://yungle.co/api/v1/contacts/01JBD4F6H8K0M2P4R6T8V0X2Z4 \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "firstName": "Sanne",
+        "lastName": "de Vries",
+        "company": "De Vries Studio",
+        "email": "sanne@devries.example",
+        "phone": "+31 20 555 0134",
+        "type": "client"
+      }'
+    ```
+
+    ```javascript JavaScript
+    const { contact: current } = await yungle.getContact('01JBD4F6H8K0M2P4R6T8V0X2Z4');
+
+    await yungle.updateContact(current.id, {
+      firstName: current.firstName,
+      lastName: current.lastName,
+      company: 'De Vries Studio',
+      email: current.email,
+      phone: current.phone,
+      type: current.type,
+    });
+    ```
+
+    ```python Python
+    current = yungle.get_contact("01JBD4F6H8K0M2P4R6T8V0X2Z4")["contact"]
+
+    yungle.update_contact(
+        current["id"],
+        current["email"],
+        first_name=current["firstName"],
+        last_name=current["lastName"],
+        company="De Vries Studio",
+        phone=current["phone"],
+        type=current["type"],
+    )
+    ```
+
+    </CodeGroup>
+
+    The response is `{ "contact": { … } }`. Changing `email` to an address another contact already uses returns `409` [`conflict`](/errors#conflict).
+  </Step>
+
+  <Step title="Delete a contact">
+    `DELETE /contacts/{id}` removes the contact and nothing else.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X DELETE https://yungle.co/api/v1/contacts/01JBD4F6H8K0M2P4R6T8V0X2Z4 \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    await yungle.deleteContact('01JBD4F6H8K0M2P4R6T8V0X2Z4');
+    ```
+
+    ```python Python
+    yungle.delete_contact("01JBD4F6H8K0M2P4R6T8V0X2Z4")
+    ```
+
+    </CodeGroup>
+
+    The response is `{ "deleted": true }`.
+
+    <Warning>
+    Deleting a contact does not remove their access to anything. If they were invited to a collection as a [guest](/concepts), they keep that access. Remove it with `DELETE /collections/{id}/guests/{guestId}`.
+    </Warning>
+  </Step>
+</Steps>
+
+## Contact types
+
+`type` is one of `client`, `colleague`, `partner`, `friend`, `family` or `other`. Any other value is saved as `other` instead of failing the request.
+
+## Reading the address book
+
+`GET /contacts` returns every contact in one response, sorted by last name, then first name, then email. The CLI prints the same list with `yungle contacts`.
+
+## Data protection
+
+Contacts are personal data about people who may never have used Yungle. Keep only the people you send to.
+
+- Contacts never expire. They stay until you delete them or delete your account, which deletes them all.
+- You can get the whole book back at any time with `GET /contacts`, and it is included in your account's data export.
+- Yungle does not email a contact because they are in your book. Email goes out only when you send a transfer to them or invite them to a collection.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send a transfer" icon="send" href="/guides/send-a-transfer">
+    Email a transfer to the people in your book.
+  </Card>
+  <Card title="Client collections" icon="folder" href="/guides/client-collections">
+    Invite a client to their own collection.
+  </Card>
+  <Card title="Errors" icon="triangle-alert" href="/errors#conflict">
+    What `409 conflict` means and when it is safe to skip.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/contacts/create-a-contact">
+    Every field of the contact endpoints.
+  </Card>
+</Columns>

@@ -1,0 +1,89 @@
+---
+title: "Concepts"
+description: "The words these docs use and what each one means: workspace, transfer, collection, upload request, contact, scanning, encryption and plans."
+---
+
+import { freeTransfer, freeDays, leafQuota, treeQuota, apiFreeUsage, apiPricePerGb } from '/snippets/generated/plan-facts.mdx';
+
+This page defines the things the API works with, in one place. Each section links to the guide that goes deeper.
+
+## Workspace
+
+A **workspace** is one account's space in Yungle: its transfers, collections, contacts, webhooks and storage. It has one **owner**, whose plan decides what the workspace can do and whose storage its files use.
+
+- **Members** are people the owner adds to the workspace. They work in it from the dashboard.
+- **Guests** are people invited by email into a single collection. They see that collection and nothing else.
+
+An **API key** belongs to one workspace and acts as its owner. A **scope** limits which resources the key may read or change. See [Authentication](/authentication).
+
+## Transfer
+
+A **transfer** is a set of files sent as one link that expires. It moves through these states:
+
+1. **Draft.** You create the transfer and upload its files. Nothing is live and nobody is emailed. A draft that is never sent is deleted after 24 hours.
+2. **Sent.** You finalize it. The link at `url` starts working, and any **recipients** you named are emailed it. `finalizedAt` is set and `status` is `active`.
+3. **Expired or revoked.** At `expiresAt` the link stops working and the files are deleted, and `status` becomes `expired`. Revoking does the same at once, and `status` becomes `removed`.
+
+Every transfer expires. On the free plan a transfer lasts {freeDays} days and holds up to {freeTransfer}; a paid plan lets you choose a longer lifetime. You can also protect a transfer with a password or cap how many times it is downloaded. Address a transfer by its `id`; the `slug` in its link is a secret that lets anyone download.
+
+Guide: [Send a transfer](/guides/send-a-transfer).
+
+## Collection
+
+A **collection** is a durable space for files, organized in **folders** (up to 10 levels deep), usually one per client or project. On a paid plan nothing in a collection expires. You share a collection through its secret link, or invite guests by email. Collections need a Leaf or Tree plan, with {leafQuota} or {treeQuota} of storage shared by all of a workspace's collections.
+
+Guide: [Client collections](/guides/client-collections).
+
+## Upload request
+
+An **upload request** is a public page that lets anyone with its link upload files into one of your collections, without an account. You can add a password, an expiry and a checklist of what you expect. You can pause it and resume it, or close it for good. Each upload through it is a submission, and the request records who sent what.
+
+Guide: [Receive files](/guides/receive-files).
+
+## Contact
+
+A **contact** is an entry in the workspace's address book: an email address, which is unique per workspace, with an optional name, company, phone number and type.
+
+Guide: [Contacts](/guides/contacts).
+
+## Files and scanning
+
+Each file in a transfer or collection is uploaded with [tus](https://tus.io), a resumable protocol, or fetched by Yungle from a URL you give it. Once a file is uploaded, Yungle scans it for viruses. A file's `scanResult` is `null` until the scan has run and `clean` after. An infected file is destroyed: its key is deleted, so it can never be downloaded.
+
+Each file also carries a `crc32` checksum, so you can check a download arrived intact.
+
+Guides: [Upload large files](/guides/upload-large-files), [Download files](/guides/download-files).
+
+## Encryption
+
+Every file is always encrypted, each with its own key, which Yungle holds. Because Yungle holds the keys, it can scan files for viruses and show previews.
+
+Two features go further and are end-to-end encrypted: the files are encrypted on your device and the key never reaches Yungle.
+
+- **End-to-end encrypted transfers.** You opt in per transfer. The key travels in the `#` part of the link, so such a transfer cannot be emailed by Yungle or password-protected.
+- **The vault.** A private collection encrypted with a key derived from your passphrase. The API cannot reach it.
+
+See [What the API cannot do](/unsupported) for what this means for your integration.
+
+## Plans and metering
+
+Yungle has a free plan and two paid plans, Leaf and Tree. The free plan covers transfers, contacts and webhooks; collections and upload requests need a paid plan.
+
+Uploads you make through the API are metered on their own, the same way on every plan: the first {apiFreeUsage} each month are free, then {apiPricePerGb} per GB from prepaid credit. Downloads are never metered. [Limits](/limits) lists the request and email limits; [Pricing](https://yungle.co/pricing) has the plans.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send your first transfer.
+  </Card>
+  <Card title="Send a transfer" icon="paper-plane" href="/guides/send-a-transfer">
+    Everything a transfer can do.
+  </Card>
+  <Card title="Client collections" icon="folder-open" href="/guides/client-collections">
+    Folders, guests and durable storage for clients.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Keys, scopes and the plan gate.
+  </Card>
+</Columns>

@@ -1,0 +1,409 @@
+---
+title: "Get notified with webhooks"
+sidebarTitle: "Webhooks"
+description: "Receive signed events when a transfer is ready, downloaded or expiring, verify them in Node or Python, and post to Slack when a client downloads."
+---
+
+A webhook tells your server when something happens in your workspace, so you stop polling. Yungle signs every request, retries failed deliveries for about two days, and can keep events for you to pull when you have no public URL.
+
+## Prerequisites
+
+- An [API key](/authentication) with `webhooks:write` (and `webhooks:read` to list endpoints), or access to [Settings → Webhooks](https://yungle.co/dashboard/settings/webhooks) in the dashboard.
+- A public `https` URL that accepts `POST` requests. Without one, use [pull mode](#pull-events-instead).
+- Any plan. The free plan includes one endpoint and the transfer events; paid plans include up to ten endpoints and every event.
+
+## Events
+
+| Type | Sent when | Plan |
+| --- | --- | --- |
+| `transfer.ready` | A transfer was sent and every file finished uploading. The link works. | Any |
+| `transfer.downloaded` | Someone downloaded a transfer. One event per visit, however many files they saved. | Any |
+| `transfer.expiring` | A sent transfer expires within 24 hours. | Any |
+| `transfer.expired` | A transfer expired or was revoked, and its files are gone. | Any |
+| `collection.file_uploaded` | A file finished uploading into a collection: from the dashboard, the API, a URL import or an upload request. | Leaf, Tree |
+| `request.submitted` | Someone sent files through one of your upload requests, and all of them have arrived. | Leaf, Tree |
+| `webhook.test` | You asked for a test. Sent whatever the endpoint subscribes to. | Any |
+
+Subscribing a free workspace to a paid event returns `402` [`upgrade_required`](/errors#upgrade_required).
+
+## What a delivery looks like
+
+Each delivery is a `POST` with a JSON body and these headers:
+
+| Header | Value |
+| --- | --- |
+| `Yungle-Event-Id` | The event's `id`. The same on every retry and redelivery. |
+| `Yungle-Event-Type` | The event's `type`, for routing before you parse. |
+| `Yungle-Delivery-Id` | This delivery to this endpoint. |
+| `Yungle-Signature` | `t=<unix seconds>,v1=<hex HMAC-SHA256>`. Step 2 of [Set up an endpoint](#set-up-an-endpoint) shows how to check it. |
+| `Content-Type` | `application/json` |
+
+Every body has the same envelope: `id`, `type`, `createdAt` and `data`.
+
+```json
+{
+  "id": "evt_01JB9C3X7K2M4N6P8Q0R2S4T6V",
+  "type": "transfer.downloaded",
+  "createdAt": "2026-10-11T10:36:02.118Z",
+  "data": {
+    "transfer": {
+      "id": "01JB9B8F2D4G6H8J0K2L4M6N8P",
+      "title": "Final cut",
+      "url": "https://yungle.co/t/k3v9Xq2mLp8RtZ4w",
+      "expiresAt": "2026-10-18T10:30:00.000Z",
+      "downloadCount": 1
+    },
+    "download": {
+      "sessionId": "01JB9C3WZ0Y8X6V4T2S0R8Q6P4",
+      "recipient": "client@example.com"
+    }
+  }
+}
+```
+
+What `data` holds for each type:
+
+| Type | `data` |
+| --- | --- |
+| `transfer.ready` | `transfer`: `id`, `title`, `url`, `expiresAt`, `downloadCount`, `fileCount`, `recipients` |
+| `transfer.downloaded` | `transfer` (as above, without `fileCount` and `recipients`); `download`: `sessionId`, `recipient` (null when the link was opened without a recipient's email link) |
+| `transfer.expiring` | `transfer`: `id`, `title`, `url`, `expiresAt`, `downloadCount` |
+| `transfer.expired` | `transfer`: `id` only; `reason`: `expired` or `revoked` |
+| `collection.file_uploaded` | `collection`: `id`, `title`; `file`: `id`, `name`, `size`, `folderId`; `source`: `web`, `api`, `import` or `file_request`; `uploader` (`name`, `email`) when an upload request brought it |
+| `request.submitted` | `request`: `id`, `title`, `collectionId`; `submission`: `id`, `uploader`, `message`, `fileCount`, `sizeBytes`; `files`: up to 500 of `id`, `name`, `size`, `folderId` |
+| `webhook.test` | `endpoint`: `id`; `message` |
+
+<Warning>
+  An uploader's name, email and message in `request.submitted` and `collection.file_uploaded` are whatever they typed. Treat them as untrusted text.
+</Warning>
+
+When a transfer expires or is revoked, Yungle deletes its earlier `transfer.ready`, `transfer.expiring` and `transfer.downloaded` events, because they carry its title and recipient addresses. That is why `transfer.expired` carries only the id.
+
+## Set up an endpoint
+
+<Steps>
+  <Step title="Create the endpoint">
+    Give it a URL and the events you want. The response includes the signing `secret`, and this is the only time you see it. To get a new one later, rotate it.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/webhooks \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "url": "https://example.com/hooks/yungle",
+        "events": ["transfer.ready", "transfer.downloaded"],
+        "description": "Delivery notifications"
+      }'
+    ```
+
+    ```javascript JavaScript
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const { webhook, secret } = await yungle.createWebhook({
+      url: 'https://example.com/hooks/yungle',
+      events: ['transfer.ready', 'transfer.downloaded'],
+      description: 'Delivery notifications',
+    });
+    ```
+
+    ```python Python
+    from yungle import Yungle
+
+    yungle = Yungle()
+
+    created = yungle.create_webhook(
+        "https://example.com/hooks/yungle",
+        ["transfer.ready", "transfer.downloaded"],
+        description="Delivery notifications",
+    )
+    secret = created["secret"]
+    ```
+
+    </CodeGroup>
+
+    ```json
+    {
+      "webhook": {
+        "id": "01JB9D1A2B3C4D5E6F7G8H9J0K",
+        "url": "https://example.com/hooks/yungle",
+        "mode": "push",
+        "description": "Delivery notifications",
+        "events": ["transfer.ready", "transfer.downloaded"],
+        "enabled": true,
+        "disabledReason": null,
+        "lastSuccessAt": null,
+        "lastFailureAt": null,
+        "createdAt": "2026-10-11T10:40:12.007Z"
+      },
+      "secret": "whsec_2fQk8Vb1mXzL0pRt7YcN4sHd9JgEa6Wu3KoTi5Bn1Mq"
+    }
+    ```
+
+    Store the secret where your receiver can read it, for example as `YUNGLE_WEBHOOK_SECRET`.
+  </Step>
+
+  <Step title="Verify the signature">
+    Check every request before you trust it. `v1` is the hex HMAC-SHA256, keyed with your endpoint's secret, of the timestamp `t`, a dot, and the **raw** request body. Reject a timestamp more than five minutes from now, and compare in constant time.
+
+    Both SDKs ship a helper that does exactly this:
+
+    <CodeGroup>
+
+    ```javascript JavaScript (yungle-client)
+    import express from 'express';
+    import { verifyWebhook } from 'yungle-client';
+
+    const app = express();
+
+    // express.raw keeps the exact bytes; the signature covers them.
+    app.post('/hooks/yungle', express.raw({ type: 'application/json' }), async (req, res) => {
+      const raw = req.body.toString('utf8');
+      const ok = await verifyWebhook(raw, req.get('yungle-signature') ?? '', process.env.YUNGLE_WEBHOOK_SECRET);
+      if (!ok) return res.status(400).end();
+      const event = JSON.parse(raw);
+      res.status(200).end();
+      // handle event…
+    });
+    ```
+
+    ```python Python (yungle)
+    import json
+    import os
+
+    from flask import Flask, request
+    from yungle import verify_webhook
+
+    app = Flask(__name__)
+
+    @app.post("/hooks/yungle")
+    def yungle_hook():
+        raw = request.get_data()  # the exact bytes, before any parsing
+        if not verify_webhook(raw, request.headers.get("Yungle-Signature", ""), os.environ["YUNGLE_WEBHOOK_SECRET"]):
+            return "", 400
+        event = json.loads(raw)
+        # handle event…
+        return "", 200
+    ```
+
+    </CodeGroup>
+
+    Without an SDK, the check is a few lines:
+
+    <CodeGroup>
+
+    ```javascript JavaScript (node:crypto)
+    import { createHmac, timingSafeEqual } from 'node:crypto';
+
+    export function verifyYungle(rawBody, header, secret, toleranceSeconds = 300) {
+      const parts = Object.fromEntries((header ?? '').split(',').map((p) => p.split('=')));
+      const t = Number(parts.t);
+      if (!Number.isInteger(t) || Math.abs(Date.now() / 1000 - t) > toleranceSeconds || !parts.v1) return false;
+      const expected = createHmac('sha256', secret).update(`${t}.${rawBody}`).digest();
+      const given = Buffer.from(parts.v1, 'hex');
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    }
+    ```
+
+    ```python Python (hmac)
+    import hashlib
+    import hmac
+    import time
+
+    def verify_yungle(raw_body: bytes, header: str, secret: str, tolerance: int = 300) -> bool:
+        try:
+            parts = dict(p.split("=", 1) for p in header.split(","))
+            t, given = int(parts["t"]), parts["v1"]
+        except (KeyError, ValueError):
+            return False
+        if abs(time.time() - t) > tolerance:
+            return False
+        expected = hmac.new(secret.encode(), f"{t}.".encode() + raw_body, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, given)
+    ```
+
+    </CodeGroup>
+
+    <Note>
+      Parse the JSON only after verifying, from the exact bytes you received. Re-serializing a parsed body changes whitespace and key order, and the signature no longer matches.
+    </Note>
+  </Step>
+
+  <Step title="Answer with a 2xx within 10 seconds">
+    Return any `2xx` status as soon as the signature checks out, then do the slow work. Any other status, a redirect, or no answer within 10 seconds counts as a failed delivery and is retried.
+  </Step>
+
+  <Step title="Send a test event">
+    Ask for a `webhook.test` event to confirm the whole path works.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/webhooks/01JB9D1A2B3C4D5E6F7G8H9J0K/test \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    const { deliveryId } = await yungle.testWebhook('01JB9D1A2B3C4D5E6F7G8H9J0K');
+    ```
+
+    ```python Python
+    delivery_id = yungle.test_webhook("01JB9D1A2B3C4D5E6F7G8H9J0K")["deliveryId"]
+    ```
+
+    </CodeGroup>
+
+    ```json
+    { "deliveryId": "01JB9D4R5S6T7U8V9W0X1Y2Z3A" }
+    ```
+
+    Your receiver gets a body with `"type": "webhook.test"` and `data.message` set to a short sentence.
+  </Step>
+</Steps>
+
+## Retries and ordering
+
+- **Retries.** A failed delivery is retried after 1, 5 and 30 minutes, then after 2, 6, 12 and 24 hours: eight attempts over about 45 hours.
+- **Pausing.** When five deliveries in a row use up all their retries, Yungle pauses the endpoint and emails the workspace owner once. Turn it back on with `PATCH /webhooks/{id}` and `{"enabled": true}`, or in the dashboard. You can also pause an endpoint yourself with `{"enabled": false}`.
+- **At least once.** The same event can arrive more than once. Deduplicate on the body's `id` (or the `Yungle-Event-Id` header), which stays the same through every retry and redelivery.
+- **No ordering.** A retry can arrive after a later event. Use `createdAt` if order matters to you.
+- **Redelivery.** `GET /webhooks/{id}/deliveries` lists recent attempts with their status code and error. `POST /webhooks/{id}/deliveries/{deliveryId}/retry` sends one again with the same event id and body.
+- **Rotating the secret.** `POST /webhooks/{id}/rotate-secret` returns a new secret and replaces the old one.
+
+## Pull events instead
+
+Create an endpoint with `"url": null` and Yungle keeps its events for 30 days for you to read. Use this from a cron job, a machine behind a firewall, or anywhere a public URL is more trouble than it is worth.
+
+Reading consumes nothing, so keep your own cursor. Pass the last `nextCursor` you saw; it comes back even when nothing is new, so you always have somewhere to resume from.
+
+<CodeGroup>
+
+```bash curl
+curl "https://yungle.co/api/v1/webhooks/<webhook-id>/events?cursor=$CURSOR" \
+  -H "Authorization: Bearer $YUNGLE_API_KEY"
+```
+
+```javascript JavaScript
+const { events, nextCursor } = await yungle.listWebhookEvents('<webhook-id>', { cursor });
+```
+
+```python Python
+page = yungle.list_webhook_events("<webhook-id>", cursor=cursor)
+events, cursor = page["events"], page["nextCursor"]
+```
+
+</CodeGroup>
+
+```json
+{
+  "events": [
+    {
+      "deliveryId": "01JB9E2F3G4H5J6K7L8M9N0P1Q",
+      "id": "evt_01JB9C3X7K2M4N6P8Q0R2S4T6V",
+      "type": "transfer.downloaded",
+      "createdAt": "2026-10-11T10:36:02.118Z",
+      "data": { "transfer": { "id": "01JB9B8F2D4G6H8J0K2L4M6N8P", "title": "Final cut" } }
+    }
+  ],
+  "nextCursor": "v1.MDFKQjlFMkYzRzRINUo2SzdMOE05TjBQMVE",
+  "hasMore": false
+}
+```
+
+## Where a webhook can be sent
+
+Only to the public internet. The URL must use `https`. Every delivery resolves the host and refuses private, loopback, link-local and reserved addresses in the same step that connects, so a hostname cannot pass the check and then point somewhere else. Redirects are not followed.
+
+## Example: post to Slack when a client downloads
+
+This receiver posts a message to a Slack channel each time someone downloads one of your transfers. It uses `node:http` and the SDK's `verifyWebhook`.
+
+<Steps>
+  <Step title="Create a Slack incoming webhook">
+    In Slack, add an [incoming webhook](https://api.slack.com/messaging/webhooks) to the channel and copy its URL.
+  </Step>
+
+  <Step title="Write the receiver">
+    ```javascript slack-on-download.mjs
+    // npm install yungle-client
+    import { createServer } from 'node:http';
+    import { verifyWebhook } from 'yungle-client';
+
+    const SECRET = process.env.YUNGLE_WEBHOOK_SECRET; // whsec_…
+    const SLACK = process.env.SLACK_WEBHOOK_URL; // https://hooks.slack.com/services/…
+    const seen = new Set(); // an event can arrive twice; its id stays the same
+
+    createServer((req, res) => {
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', async () => {
+        if (!(await verifyWebhook(body, req.headers['yungle-signature'] ?? '', SECRET))) {
+          return res.writeHead(401).end();
+        }
+        res.writeHead(200).end(); // answer first: Yungle waits 10 seconds at most
+
+        const event = JSON.parse(body);
+        if (event.type !== 'transfer.downloaded' || seen.has(event.id)) return;
+        seen.add(event.id);
+
+        const { transfer, download } = event.data;
+        await fetch(SLACK, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `${download.recipient ?? 'Someone'} downloaded ${transfer.title ?? 'a transfer'}: ${transfer.url}`,
+          }),
+        });
+      });
+    }).listen(8080);
+    ```
+
+    It verifies before it parses, answers before it calls Slack so a slow Slack never counts as a failed delivery, and remembers event ids so a retry does not post twice. One visit is one event, so the channel gets one message per download, not one per file.
+  </Step>
+
+  <Step title="Try it locally with the CLI">
+    Run the receiver, then let the [CLI](/cli) forward real events to it. You need no public URL.
+
+    ```bash
+    yungle webhooks listen --forward-to http://localhost:8080
+    ```
+
+    The CLI prints a signing secret for the session. Start the receiver with it:
+
+    ```bash
+    YUNGLE_WEBHOOK_SECRET=whsec_… SLACK_WEBHOOK_URL=https://hooks.slack.com/services/… \
+      node slack-on-download.mjs
+    ```
+
+    Send yourself a transfer and download it. The Slack message follows within seconds.
+
+    <Note>
+      `yungle webhooks listen` creates a pull endpoint of its own, and that counts towards your endpoint limit. On the free plan, which has one endpoint, remove it in [Settings → Webhooks](https://yungle.co/dashboard/settings/webhooks) before you add the real one. It also needs an API key with `webhooks:write` (`yungle login --key`); a browser sign-in cannot add endpoints.
+    </Note>
+  </Step>
+
+  <Step title="Deploy and subscribe">
+    Deploy the receiver at a public `https` URL, then [create an endpoint](#set-up-an-endpoint) for it subscribed to `transfer.downloaded`. Start the deployed receiver with that endpoint's secret.
+  </Step>
+</Steps>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send a transfer" icon="send" href="/guides/send-a-transfer">
+    Create the transfers whose events you are now receiving.
+  </Card>
+  <Card title="Receive files" icon="inbox" href="/guides/receive-files">
+    Hear about each upload request submission with `request.submitted`.
+  </Card>
+  <Card title="SDKs" icon="code" href="/sdks">
+    Webhook methods and verification helpers in JavaScript and Python.
+  </Card>
+  <Card title="API reference" icon="book" href="/api-reference/webhooks/create-an-endpoint">
+    Every webhook endpoint, with its full schema.
+  </Card>
+</Columns>

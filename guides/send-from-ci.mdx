@@ -1,0 +1,202 @@
+---
+title: "Send files from CI and cron"
+sidebarTitle: "Send from CI"
+description: "Send build output from GitHub Actions or any CI with the Yungle CLI and an API key, and schedule a nightly report from cron."
+---
+
+import { freeTransfer, freeDays } from "/snippets/generated/plan-facts.mdx";
+
+Send a build's output, a signed installer or a nightly report to someone outside your team, straight from a pipeline. The CLI uploads resumably, prints the link, and can email it for you.
+
+## Prerequisites
+
+- An [API key](/authentication) with `transfers:write`. Add `transfers:read` if the job checks download receipts afterwards.
+- The key stored as a secret in your CI, exposed to the job as `YUNGLE_API_KEY`. The CLI reads it from the environment, so there is no login step.
+- Node 22 or newer on the runner, for the [CLI](/cli) (`yungle-cli`).
+
+Transfers work on every plan. On the free plan a transfer holds up to {freeTransfer} and lasts {freeDays} days.
+
+## Send from GitHub Actions
+
+<Steps>
+  <Step title="Store the API key">
+    In your repository, open **Settings → Secrets and variables → Actions** and add a secret named `YUNGLE_API_KEY`.
+  </Step>
+
+  <Step title="Add the workflow">
+    The [`yungle-send-action`](https://github.com/heindewilde/yungle-send-action) runs `yungle send` for you and returns the link as an output. This workflow builds on every published release and emails the result to a client.
+
+    ```yaml .github/workflows/deliver.yml
+    name: Deliver release
+
+    on:
+      release:
+        types: [published]
+
+    jobs:
+      deliver:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with:
+              node-version: 22
+          - run: npm ci && npm run build
+
+          - uses: heindewilde/yungle-send-action@v1
+            id: deliver
+            with:
+              api-key: ${{ secrets.YUNGLE_API_KEY }}
+              path: dist/
+              to: client@example.com
+              title: Release ${{ github.ref_name }}
+              message: Release ${{ github.ref_name }} is ready.
+
+          - run: echo "Delivered ${{ steps.deliver.outputs.url }} (transfer ${{ steps.deliver.outputs.id }})"
+    ```
+
+    The action adds a summary with the link to the run, and fails the job with Yungle's error message if the send fails.
+  </Step>
+
+  <Step title="Check the result">
+    Each run sends a new transfer. The action's outputs:
+
+    | Output | Value |
+    | --- | --- |
+    | `url` | The share link. |
+    | `id` | The transfer id, for the API. |
+    | `expires-at` | When the link stops working, in ISO 8601. |
+  </Step>
+</Steps>
+
+### Action inputs
+
+| Input | Required | What it does |
+| --- | --- | --- |
+| `api-key` | Yes | An API key with `transfers:write`. Pass it from a secret. |
+| `path` | Yes | Files or directories, one per line. Directories keep their structure. |
+| `to` | No | Recipients, comma- or newline-separated. Leave empty for a link only. |
+| `message` | No | A note for the recipients. |
+| `title` | No | A label for your dashboard. Recipients never see it. |
+| `expires` | No | Lifetime in days, clamped to your plan's maximum. |
+| `password` | No | Recipients must enter it to download. Pass it from a secret; the action masks it in logs. |
+| `cli-version` | No | The `yungle-cli` version to run. Defaults to the latest `0.x`. |
+
+### Without the action
+
+On another CI system, or to control the command yourself, run the CLI directly. `--json` prints one JSON object on stdout; progress goes to stderr, so the pipe stays clean.
+
+```yaml
+      - name: Send the build
+        env:
+          YUNGLE_API_KEY: ${{ secrets.YUNGLE_API_KEY }}
+        run: |
+          URL=$(npx -y yungle-cli send dist/ \
+            --to client@example.com \
+            --title "Release ${{ github.ref_name }}" \
+            --json | jq -r .url)
+          echo "Delivered: $URL" >> "$GITHUB_STEP_SUMMARY"
+```
+
+`yungle send --json` returns:
+
+```json
+{
+  "id": "01JB9F5G6H7J8K9L0M1N2P3Q4R",
+  "url": "https://yungle.co/t/k3v9Xq2mLp8RtZ4w",
+  "expiresAt": "2026-10-18T06:00:12.000Z",
+  "notified": ["client@example.com"]
+}
+```
+
+On failure it prints `{ "error": { "code": "…", "message": "…" } }` and exits non-zero. The `code` values are the ones on [Errors](/errors).
+
+## Send a nightly report from cron
+
+<Steps>
+  <Step title="Store the key in a file">
+    Put the key in a file only the cron user can read, rather than in the crontab, which leaks through `ps` and backups.
+
+    ```bash
+    sudo install -D -m 600 -o reports /dev/null /etc/yungle/api-key
+    echo 'yk_live_…' | sudo tee /etc/yungle/api-key > /dev/null
+    ```
+  </Step>
+
+  <Step title="Write the script">
+    The script generates the report, sends it, and appends one line per send to a log.
+
+    ```bash /usr/local/bin/send-nightly-report
+    #!/usr/bin/env bash
+    set -euo pipefail   # if the report fails to generate, nothing is sent
+
+    export YUNGLE_API_KEY="$(cat /etc/yungle/api-key)"
+    REPORT="/var/reports/$(date +%F).xlsx"
+    LOG=/var/log/yungle-reports.jsonl
+
+    /usr/local/bin/generate-report > "$REPORT"
+
+    yungle send "$REPORT" \
+      --to finance@example.com \
+      --title "Nightly report $(date +%F)" \
+      --expires 7 \
+      --json \
+      | jq -c --arg file "$REPORT" '{at: (now | todate), file: $file, id, url, notified}' \
+      >> "$LOG"
+    ```
+
+    `--expires` is clamped to your plan's maximum rather than rejected. The log answers "did Tuesday's report go out?" with one `grep`, and holds the transfer id if you need to check downloads.
+  </Step>
+
+  <Step title="Schedule it">
+    Run it at six every morning:
+
+    ```bash crontab
+    0 6 * * * /usr/local/bin/send-nightly-report 2>> /var/log/yungle-reports.err
+    ```
+  </Step>
+</Steps>
+
+## When an upload is interrupted
+
+Run the same command again with the same files. The CLI continues the existing transfer from the last committed part instead of starting a second one. In CI, a rerun of the job on a fresh runner has nothing to resume and sends a new transfer, which is usually what you want.
+
+## Check that it was downloaded
+
+Use the transfer id from the JSON output to read the download receipts, or subscribe to the `transfer.downloaded` [webhook](/guides/webhooks) instead of polling.
+
+<CodeGroup>
+
+```bash curl
+curl https://yungle.co/api/v1/transfers/<transfer-id>/downloads \
+  -H "Authorization: Bearer $YUNGLE_API_KEY" \
+  | jq '.recipients[] | {email, downloaded}'
+```
+
+```bash CLI
+yungle status <transfer-id>
+```
+
+</CodeGroup>
+
+## Limits that apply to pipelines
+
+- Up to 10 recipients per transfer. Emailing them counts against a daily budget per workspace. Leave out `--to` and nobody is emailed, so the send costs nothing from that budget.
+- API uploads are metered separately from your plan. See [Limits](/limits).
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="CLI" icon="terminal" href="/cli">
+    Every command and flag, including `push` for collections and `watch` for export folders.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get told when the client downloads the build.
+  </Card>
+  <Card title="Send from Python" icon="code" href="/guides/send-from-python">
+    Send from a Python job with the `yungle` SDK.
+  </Card>
+  <Card title="Limits" icon="gauge" href="/limits">
+    Transfer sizes, recipients, email budgets and API metering.
+  </Card>
+</Columns>

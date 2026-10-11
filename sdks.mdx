@@ -1,0 +1,253 @@
+---
+title: "SDKs"
+description: "Install and use the JavaScript (yungle-client) and Python (yungle) SDKs: clients, operations, uploads, errors, retries and webhook verification."
+---
+
+Two official SDKs wrap the [REST API](/api-reference): `yungle-client` for JavaScript and TypeScript, and `yungle` for Python. Use one when you would rather call methods than build requests, and want resumable uploads and safe retries handled for you.
+
+Both are open source in [heindewilde/yungle-clients](https://github.com/heindewilde/yungle-clients). Their READMEs: [JavaScript](https://github.com/heindewilde/yungle-clients/tree/main/packages/api-client#readme) and [Python](https://github.com/heindewilde/yungle-clients/tree/main/python#readme).
+
+## Install
+
+<CodeGroup>
+
+```bash JavaScript
+npm install yungle-client
+```
+
+```bash Python
+pip install yungle
+```
+
+</CodeGroup>
+
+| | JavaScript (`yungle-client`) | Python (`yungle`) |
+| --- | --- | --- |
+| Runtime | Node 22+, Bun, Deno, edge runtimes | Python 3.9+ |
+| Dependencies | None; built on `fetch` | `httpx` |
+| Types | TypeScript types for every response | Type hints; responses are the API's JSON as `dict`s |
+
+## Create a client
+
+Create an [API key](/authentication) with the scopes you need and keep it in `YUNGLE_API_KEY`.
+
+<CodeGroup>
+
+```javascript JavaScript
+import { YungleClient } from 'yungle-client';
+
+const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+const me = await yungle.me();
+```
+
+```python Python
+from yungle import Yungle
+
+yungle = Yungle()  # reads YUNGLE_API_KEY; or Yungle(api_key="yk_live_…")
+
+me = yungle.me()
+```
+
+</CodeGroup>
+
+| Option | JavaScript | Python | Default |
+| --- | --- | --- | --- |
+| API key | `apiKey` (required) | `api_key`, else `YUNGLE_API_KEY` | none |
+| API base URL | `baseUrl` | `base_url`, else `YUNGLE_API_URL` | `https://yungle.co/api/v1` |
+| Retries | `maxRetries` | `max_retries` | `3` |
+| HTTP client | `fetch` | `http` (an `httpx.Client`) | the platform's own |
+| Timeout | via your `fetch` | `timeout` (seconds) | none in JS, `60` in Python |
+| User agent | `userAgent` | not configurable | `yungle-client/<version>`, `yungle-python/<version>` |
+
+The Python client holds an HTTP connection pool. Use it as a context manager (`with Yungle() as yungle:`) or call `close()` when you are done.
+
+## Operations
+
+Every endpoint is a method. The table lists the ones you reach for most; the [API reference](/api-reference) documents each request and response.
+
+| Operation | JavaScript | Python |
+| --- | --- | --- |
+| Send files in one call | not available; see [uploads](#uploads) | `send(paths, to=…, message=…)` |
+| Create a draft transfer | `createTransfer({ files, title })` | `create_transfer(files, title=…)` |
+| Add files to a draft | `addTransferFiles(id, files)` | `add_transfer_files(id, files)` |
+| Send a transfer | `finalizeTransfer(id, { recipients, message })` | `finalize_transfer(id, recipients=…, message=…)` |
+| List transfers (one page) | `listTransfers({ limit, cursor })` | `list_transfers(limit=…, cursor=…)` |
+| Iterate all transfers | `allTransfers()` | `all_transfers()` |
+| Transfer detail | `getTransfer(id)` | `get_transfer(id)` |
+| Change expiry or download limit | `updateTransfer(id, { expiresInDays, maxDownloads })` | `update_transfer(id, expires_in_days=…, max_downloads=…)` |
+| Revoke a transfer | `revokeTransfer(id)` | `revoke_transfer(id)` |
+| Download receipts | `transferDownloads(id)` | `transfer_downloads(id)` |
+| Download links for your transfer | `transferDownloadLinks(id)` | `transfer_download_links(id)` |
+| Open a link someone shared | `resolveLink(url, password?)` | `resolve_link(url, password=…)` |
+| Save a link's files to disk | not available | `download(url, out_dir)` |
+| Create a collection | `createCollection({ title, description })` | `create_collection(title, description=…)` |
+| Register collection files | `addCollectionFiles(id, files, folderId?)` | `add_collection_files(id, files, folder_id=…)` |
+| Iterate collection files | `allCollectionFiles(id, folderId?)` | `all_collection_files(id, folder_id=…)` |
+| Create a folder | `createFolder(id, { name, parentId })` | `create_folder(id, name, parent_id=…)` |
+| Invite guests | `inviteGuests(id, emails)` | `invite_guests(id, emails)` |
+| Remove a guest | `removeGuest(id, guestId)` | `remove_guest(id, guest_id)` |
+| Create an upload request | `createRequest({ collectionId, title })` | `create_request(collection_id, title)` |
+| Pause, resume or close a request | `setRequestStatus(id, status)` | `set_request_status(id, status)` |
+| Create a contact | `createContact({ email, firstName })` | `create_contact(email, first_name=…)` |
+| Create a webhook endpoint | `createWebhook({ url, events })` | `create_webhook(url, events)` |
+| Read pull-mode events | `listWebhookEvents(id, { cursor })` | `list_webhook_events(id, cursor=…)` |
+| Send a test event | `testWebhook(id)` | `test_webhook(id)` |
+
+`files` entries are `{ name, size, path?, type? }`, with `size` the exact byte count and `path` the folder the file belongs in, such as `Ceremony/Raw`. Both SDKs also accept `imports`, files Yungle fetches from a URL itself; wait for them with `waitForImports` or `wait_for_imports`.
+
+## Uploads
+
+Creating a transfer, or registering collection files, returns a `tusEndpoint` and one target per file. Each SDK uploads one file to one target over tus, resumably:
+
+<CodeGroup>
+
+```javascript JavaScript
+import { openAsBlob, statSync } from 'node:fs';
+
+const draft = await yungle.createTransfer({
+  files: [{ name: 'final-cut.mov', size: statSync('final-cut.mov').size }],
+});
+await yungle.uploadFile(draft.tusEndpoint, draft.files[0], await openAsBlob('final-cut.mov'), {
+  onProgress: (sent, total) => console.log(`${Math.round((sent / total) * 100)}%`),
+});
+const { transfer } = await yungle.finalizeTransfer(draft.transfer.id, {
+  recipients: ['client@example.com'],
+});
+```
+
+```python Python
+import os
+from yungle import upload_file
+
+draft = yungle.create_transfer(
+    [{"name": "final-cut.mov", "size": os.path.getsize("final-cut.mov")}]
+)
+upload_file(
+    draft["tusEndpoint"], draft["files"][0], "final-cut.mov",
+    on_progress=lambda sent, total: print(f"{sent / total:.0%}"),
+)
+transfer = yungle.finalize_transfer(
+    draft["transfer"]["id"], recipients=["client@example.com"]
+)["transfer"]
+
+# Or the whole thing in one call:
+sent = yungle.send(["final-cut.mov"], to=["client@example.com"])
+```
+
+</CodeGroup>
+
+Both upload helpers:
+
+- Continue from the offset the server last committed, after a dropped connection or a server error.
+- Renew the two-hour upload token for as long as the upload runs.
+- Return the upload URL. Pass it back (`uploadUrl` in JavaScript, `upload_url=` in Python) to resume the same upload from another process. Never start a second upload for the same file: it starts over.
+
+In Node, `fs.openAsBlob(path)` streams from disk without loading the file into memory. [Upload large files](/guides/upload-large-files) explains the protocol underneath.
+
+## Errors and retries
+
+A failed request throws `YungleApiError` in JavaScript and raises `YungleError` in Python. Branch on `code`; the message is for people and may change.
+
+<CodeGroup>
+
+```javascript JavaScript
+import { YungleApiError } from 'yungle-client';
+
+try {
+  await yungle.createCollection({ title: 'Client deliveries' });
+} catch (err) {
+  if (err instanceof YungleApiError && err.code === 'upgrade_required') {
+    // Collections need Leaf or Tree.
+  } else {
+    throw err;
+  }
+}
+```
+
+```python Python
+from yungle import YungleError
+
+try:
+    yungle.create_collection("Client deliveries")
+except YungleError as err:
+    if err.code != "upgrade_required":  # collections need Leaf or Tree
+        raise
+```
+
+</CodeGroup>
+
+| Field | JavaScript | Python |
+| --- | --- | --- |
+| HTTP status | `status` | `status` |
+| Error code, as on [Errors](/errors) | `code` | `code` |
+| Human-readable message | `message` | `message` |
+| Extra detail, such as `limitBytes` | `details` | `details` |
+| Link to the code's explanation | `docs` | `docs` |
+| Worth retrying (`429` or `5xx`) | `retryable` | `retryable` |
+| Seconds to wait, from the body or `Retry-After` | `retryAfterSeconds` | `retry_after_seconds` |
+
+Both clients retry for you, up to `maxRetries` / `max_retries` times:
+
+- **`429`** is always retried, because a throttled request did nothing.
+- **`5xx`** is retried for `GET`, `DELETE` and `POST`. Every `POST` carries an `Idempotency-Key` that stays the same across its retries, so a retried create returns the first result instead of making a second one. `PATCH` is not retried.
+- **A dropped connection** is retried by the Python client, under the same rules as a `5xx`. The JavaScript client throws the `fetch` error instead.
+- The wait honors `Retry-After` when the server sends one, and otherwise backs off exponentially with jitter.
+
+Set the retry count to `0` to handle retries yourself.
+
+## Verify webhooks
+
+Each SDK exports a helper that checks the `Yungle-Signature` header against the raw request body, and rejects a timestamp more than five minutes old.
+
+<CodeGroup>
+
+```javascript JavaScript
+import { verifyWebhook } from 'yungle-client';
+
+// rawBody: the request body as a string, exactly as received.
+const ok = await verifyWebhook(rawBody, req.headers['yungle-signature'], process.env.YUNGLE_WEBHOOK_SECRET);
+```
+
+```python Python
+from yungle import verify_webhook
+
+# raw_body: bytes or str, exactly as received.
+ok = verify_webhook(raw_body, headers["Yungle-Signature"], os.environ["YUNGLE_WEBHOOK_SECRET"])
+```
+
+</CodeGroup>
+
+The JavaScript helper is `async` because it uses WebCrypto, which lets it run on edge runtimes. Change the window with `{ toleranceSeconds }` or `tolerance_seconds=`. See [Webhooks](/guides/webhooks) for the full receiver.
+
+## What the SDKs cannot reach
+
+Your vault and end-to-end encrypted transfers are encrypted with keys Yungle never holds, so the SDKs cannot read their contents. The JavaScript SDK can create an end-to-end encrypted transfer when you encrypt the files yourself with the `yungle-e2e` package. See [Unsupported](/unsupported).
+
+## Versions
+
+| | Package | Changes |
+| --- | --- | --- |
+| JavaScript | [`yungle-client` on npm](https://www.npmjs.com/package/yungle-client) | [CHANGELOG](https://github.com/heindewilde/yungle-clients/blob/main/packages/api-client/CHANGELOG.md) |
+| Python | [`yungle` on PyPI](https://pypi.org/project/yungle/) | [Releases](https://github.com/heindewilde/yungle-clients/releases) |
+
+Both are versioned `0.x`. Pin the version you tested against, and read the changes before you upgrade. The API itself is versioned in its path (`/api/v1`); see the [changelog](/changelog).
+
+{/* TODO verify: this page describes yungle (Python) 0.2.0 from the clients repo. PyPI had 0.1.0 on 2026-10-11, which lacks download(), resolve_link(), transfer/collection_download_links(), imports, the upload-request methods, error.docs and upload-token renewal. */}
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send from Python" icon="code" href="/guides/send-from-python">
+    A full script with the Python SDK.
+  </Card>
+  <Card title="Send a transfer" icon="send" href="/guides/send-a-transfer">
+    The transfer flow, with curl, JavaScript, Python and the CLI.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Events, signatures, retries and a worked example.
+  </Card>
+  <Card title="Errors" icon="triangle-alert" href="/errors">
+    Every error code and what to do about it.
+  </Card>
+</Columns>

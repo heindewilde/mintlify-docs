@@ -1,0 +1,249 @@
+---
+title: "Upload large files"
+description: "Upload files of any size with resumable tus uploads: register, stream in parts, resume after a dropped connection, and renew tokens on long uploads."
+---
+
+import { freeTransfer, apiFreeUsage, apiPricePerGb } from "/snippets/generated/plan-facts.mdx";
+
+File bytes never travel through the JSON API. You register each file, then stream it to the upload endpoint over [tus](https://tus.io), a resumable protocol, so a dropped connection costs you at most one part instead of the whole file. Read this page when you write your own upload client; the [SDKs](/sdks) and the [CLI](/cli) already do all of it.
+
+## Prerequisites
+
+- An [API key](/authentication) with `transfers:write` (for a transfer) or `collections:write` (for a [collection](/guides/client-collections), on a paid plan).
+- A file whose exact size in bytes you know before you start.
+- Optional: `npm install yungle-client` or `pip install yungle`, whose upload helpers implement every rule below.
+
+## How an upload works
+
+| Step | Request | Credential |
+| --- | --- | --- |
+| Register | `POST /api/v1/transfers`, `POST /api/v1/transfers/{id}/files` or `POST /api/v1/collections/{id}/files` | API key |
+| Create the upload | `POST` to `tusEndpoint` | Upload token |
+| Send the bytes | `PATCH` the upload URL, one part at a time | Upload token |
+| Resume | `HEAD` the upload URL, then `PATCH` from the offset it returns | Upload token |
+| Renew the token | `POST https://yungle.co/api/uploads/token` | Upload token |
+
+When the last byte lands, the file is ready and queued for a virus scan. There is no separate "complete" call.
+
+## Steps
+
+<Steps>
+  <Step title="Register the file">
+    Send its name and exact `size`. The size must match the bytes you upload: it is what the quota reservation and the truncation check compare against, and a mismatch fails the upload.
+
+    ```bash
+    curl -X POST https://yungle.co/api/v1/transfers \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"files":[{"name":"a001.mov","size":42949672960,"path":"Day 1/Card A"}]}'
+    ```
+
+    You get back the upload endpoint and one target per file. Keep the `id` and `uploadToken`:
+
+    ```json
+    {
+      "transfer": { "id": "01JB9Q3T5V7X9Z1B3D5F7H9K2M", "slug": "k3v9w2p7q4", "expiresAt": "2026-10-18T09:00:00.000Z", "maxBytes": 268435456000 },
+      "tusEndpoint": "https://yungle.co/files",
+      "files": [
+        {
+          "id": "01JB9Q3T6A1C3E5G7J9L1N3P5R",
+          "name": "a001.mov",
+          "size": 42949672960,
+          "uploadToken": "eyJzY29wZSI6InVwbG9hZCIs…",
+          "uploadTokenExpiresAt": "2026-10-11T11:00:00.000Z"
+        }
+      ],
+      "imports": []
+    }
+    ```
+
+    One call registers up to 500 files.
+  </Step>
+
+  <Step title="Create the upload">
+    `POST` to `tusEndpoint` with the file's size and three metadata values, each base64-encoded: `fileId`, `token` and `filename`. Send the token in the `x-yungle-upload-token` header as well.
+
+    ```bash
+    FILE_ID=01JB9Q3T6A1C3E5G7J9L1N3P5R
+    TOKEN="eyJzY29wZSI6InVwbG9hZCIs…"
+    b64() { printf %s "$1" | base64 | tr -d '\n'; }
+
+    curl -i -X POST https://yungle.co/files \
+      -H "Tus-Resumable: 1.0.0" \
+      -H "x-yungle-upload-token: $TOKEN" \
+      -H "Upload-Length: 42949672960" \
+      -H "Upload-Metadata: fileId $(b64 $FILE_ID),token $(b64 "$TOKEN"),filename $(b64 a001.mov)"
+    ```
+
+    The answer is `201 Created` with the upload URL in `Location`, for example `https://yungle.co/files/01JB9Q3T6A1C3E5G7J9L1N3P5R`. **Store it.** It is what you resume against.
+
+    <Warning>
+    Create an upload once. A second `POST` for the same file starts over with a new encryption key and abandons everything already sent. To continue, use `HEAD` (step 4).
+    </Warning>
+  </Step>
+
+  <Step title="Send the bytes, one part per request">
+    The server encrypts and stores each file in **parts of 32 MiB** (33,554,432 bytes). Files larger than about 281 GiB use larger parts, because a file has at most 9,000: the part size is then `ceil(size / 9000)` rounded up to a whole MiB.
+
+    Send one part per `PATCH`, starting at offset 0. Each response is `204` with `Upload-Offset`: the end of the last part the server committed. Always continue from that value, never from what you sent.
+
+    ```bash
+    PART=33554432
+    OFFSET=0
+    dd if=a001.mov bs=1048576 skip=$((OFFSET / 1048576)) count=32 2>/dev/null |
+      curl -i -X PATCH https://yungle.co/files/$FILE_ID \
+        -H "Tus-Resumable: 1.0.0" \
+        -H "x-yungle-upload-token: $TOKEN" \
+        -H "Upload-Offset: $OFFSET" \
+        -H "Content-Type: application/offset+octet-stream" \
+        --data-binary @-
+    # → HTTP/1.1 204 No Content
+    #   Upload-Offset: 33554432
+    ```
+
+    Three rules follow from committing in parts:
+
+    - **A request smaller than one part never advances the offset.** The server answers with the previous boundary, and a client that resends forever never finishes. Send at least one full part per request, except for the last, shorter piece of the file.
+    - **Keep each request short.** Since 2026-10-11 the web app sends exactly one part per `PATCH`, and so should you. A single request carrying a whole large file can be cut off by a proxy deadline (30 minutes per request), and each resume would hit the same wall. The SDKs send 64 MiB per request, two parts.
+    - **Send `x-yungle-upload-token` on every request**: `POST`, `HEAD`, `PATCH` and `DELETE`. tus metadata reaches the server only on the first `POST`. A request without a valid token is refused with `403`.
+  </Step>
+
+  <Step title="Resume after a dropped connection">
+    `HEAD` the stored upload URL. `Upload-Offset` is where the server stands, always on a part boundary. Continue `PATCH`ing from there.
+
+    ```bash
+    curl -I https://yungle.co/files/$FILE_ID \
+      -H "Tus-Resumable: 1.0.0" \
+      -H "x-yungle-upload-token: $TOKEN"
+    # → HTTP/1.1 200 OK
+    #   Upload-Offset: 1342177280
+    #   Upload-Length: 42949672960
+    ```
+
+    This works from a different process or machine, as long as you have the upload URL and a valid token. Retry `5xx`, `409`, `423`, `429` and network errors after a short wait; treat other `4xx` answers as final.
+  </Step>
+
+  <Step title="Renew the token on long uploads">
+    An upload token lasts two hours (`uploadTokenExpiresAt`). An upload that runs longer needs a fresh one before it expires, or its next request is refused. Trade the current token for a new one at any point; halfway through its life is a good moment, and renewing more often does no harm.
+
+    ```bash
+    curl -X POST https://yungle.co/api/uploads/token \
+      -H "x-yungle-upload-token: $TOKEN"
+    ```
+
+    ```json
+    {
+      "fileId": "01JB9Q3T6A1C3E5G7J9L1N3P5R",
+      "uploadToken": "eyJzY29wZSI6InVwbG9hZCIs…",
+      "expiresAt": "2026-10-11T13:00:00.000Z"
+    }
+    ```
+
+    Use the new token on every request from then on. This endpoint sits outside `/api/v1` and takes the upload token, not your API key. `401` means the token is invalid or already expired, and `404` that the upload has finished or was cancelled; neither is worth retrying. An expired token cannot be renewed: register the file again.
+
+    Renewing also tells Yungle the upload is alive, so its quota stays reserved and recipients see that files are still arriving.
+  </Step>
+</Steps>
+
+## Use an SDK instead
+
+Both SDKs implement the steps above: they create the upload once, send part-sized chunks, resume from the server's offset, retry transient failures, and renew the token for as long as the upload runs.
+
+<CodeGroup>
+
+```javascript JavaScript
+import { openAsBlob, statSync } from 'node:fs';
+import { YungleClient } from 'yungle-client';
+
+const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+const path = 'a001.mov';
+
+const draft = await yungle.createTransfer({
+  files: [{ name: 'a001.mov', size: statSync(path).size, path: 'Day 1/Card A' }],
+});
+
+await yungle.uploadFile(draft.tusEndpoint, draft.files[0], await openAsBlob(path), {
+  // Store these to resume from another process: pass them back as `uploadUrl`.
+  onUploadUrl: (url) => console.log('upload URL', url),
+  onProgress: (sent, total) => console.log(`${Math.round((sent / total) * 100)}%`),
+});
+```
+
+```python Python
+import os
+from yungle import Yungle, upload_file
+
+yungle = Yungle()
+path = "a001.mov"
+
+draft = yungle.create_transfer(
+    [{"name": "a001.mov", "size": os.path.getsize(path), "path": "Day 1/Card A"}]
+)
+
+upload_url = upload_file(
+    draft["tusEndpoint"],
+    draft["files"][0],
+    path,
+    on_progress=lambda sent, total: print(f"{sent * 100 // total}%"),
+)
+# To resume in a later process: upload_file(..., upload_url=upload_url)
+```
+
+```bash CLI
+# Interrupt it and run the same command again: it carries on from the last committed part.
+yungle send ./Day\ 1 --title "Rushes, day 1"
+```
+
+</CodeGroup>
+
+## Folders
+
+Give each file a `path`, the folder it sits in, such as `"Ceremony/Raw"`. Leave it out for a loose file.
+
+- **In a transfer**, the path is kept for the recipient: the zip they download has the same folders.
+- **In a collection**, the path creates real folders you can browse and rename, up to 10 levels deep. You can also pass `folderId` to put the files inside an existing folder.
+
+The CLI keeps folder structure when you pass it a directory.
+
+## Import from a URL instead
+
+When the file is already online, such as a presigned S3 link, a CDN or a release asset, let Yungle fetch it. Put `{ "url": "…", "name": "…" }` in `imports`, alongside or instead of `files`, on any of the three register calls. The bytes go from the source to Yungle without passing through your machine.
+
+- The source must be reachable from the public internet and state the file's size.
+- An import counts like an upload: same quota, size limits, virus scan and API metering.
+- Follow it with [`GET /imports/{fileId}`](/api-reference/transfers/follow-a-url-import): `importing` with `receivedBytes`, then `ready` or `failed`.
+- Up to 20 imports per call.
+
+## Limits
+
+| What | Limit |
+| --- | --- |
+| Files per register call | 500 |
+| One transfer, free plan | {freeTransfer} |
+| One transfer, paid plan | Your plan's storage quota |
+| A collection | Your plan's storage quota, reserved when you register |
+| Upload token lifetime | 2 hours, renewable |
+| Part size | 32 MiB, larger above about 281 GiB |
+
+Uploads through the API are metered separately from your plan, the same on every plan: the first {apiFreeUsage} each month are free, then {apiPricePerGb} per GB from prepaid credit. When the credit runs out, a register call returns `402` [`out_of_credit`](/errors#out_of_credit). Request rates are on [Limits](/limits).
+
+## After the bytes land
+
+Each file is scanned for malware once its last byte arrives. `GET /transfers/{id}` reports `scanResult` per file: `null` while the scan is pending, then `clean`, `infected`, or `unscanned` when the scanner could not inspect it. An infected file's encryption key is destroyed at once, so nobody can download it, you included. You do not need to wait for the scan before you send a transfer.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Send a transfer" icon="send" href="/guides/send-a-transfer">
+    Register, upload and send, end to end.
+  </Card>
+  <Card title="Client collections" icon="folder" href="/guides/client-collections">
+    Upload folders into a lasting place for each client.
+  </Card>
+  <Card title="Send from CI" icon="server" href="/guides/send-from-ci">
+    Ship build artefacts with the CLI.
+  </Card>
+  <Card title="Errors" icon="triangle-alert" href="/errors">
+    Every error code and what to do about it.
+  </Card>
+</Columns>

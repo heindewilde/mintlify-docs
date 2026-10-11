@@ -1,0 +1,240 @@
+---
+title: "Receive files with an upload request"
+sidebarTitle: "Receive files"
+description: "Create an upload request link that lets anyone send files into one of your collections, share it, see what arrived, and close it."
+---
+
+import { leafPrice, treePrice } from "/snippets/generated/plan-facts.mdx";
+
+An [upload request](/concepts#upload-request) is a public page where anyone with the link can upload files straight into one of your collections, without an account. Use it to collect photos from a client, documents from a supplier, or footage from a crew.
+
+## Prerequisites
+
+- A workspace on **Leaf** ({leafPrice}/month) or **Tree** ({treePrice}/month). Upload requests feed a collection, so creating one needs a paid plan; on the free plan it returns `402` [`upgrade_required`](/errors#upgrade_required). Reading requests is free.
+- An [API key](/authentication) with `collections:write` (to create, pause and close) and `collections:read` (to list and read), exported as `YUNGLE_API_KEY`.
+- A collection for the files to land in. Create one with [Client collections](/guides/client-collections), or find its `id` with `GET /collections`. The vault cannot take upload requests.
+
+## Steps
+
+<Steps>
+  <Step title="Create the upload request">
+    Name the collection and give the page a title. Everything else is optional.
+
+    | Field | What it does |
+    | --- | --- |
+    | `collectionId` | The collection the files land in. Required. |
+    | `title` | Shown to the people uploading. Required. |
+    | `message` | A note on the upload page. |
+    | `password` | Uploaders must enter it before they can upload. |
+    | `requiredItems` | A checklist shown on the page, up to 30 items. It guides uploaders; it does not block an upload that misses one. |
+    | `expiresAt` | An ISO 8601 time when the link stops taking uploads. Omit it to keep the link open until you close it. |
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/requests \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "collectionId": "01JB8Z4K7Q2W3E5R6T7Y8U9I0P",
+        "title": "Wedding photos: send us yours",
+        "message": "Full resolution, please. Folders are fine.",
+        "requiredItems": ["Ceremony", "Reception"],
+        "expiresAt": "2026-11-30T23:59:59Z"
+      }'
+    ```
+
+    ```javascript JavaScript
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const { request } = await yungle.createRequest({
+      collectionId: '01JB8Z4K7Q2W3E5R6T7Y8U9I0P',
+      title: 'Wedding photos: send us yours',
+      message: 'Full resolution, please. Folders are fine.',
+      requiredItems: ['Ceremony', 'Reception'],
+      expiresAt: '2026-11-30T23:59:59Z',
+    });
+    ```
+
+    ```python Python
+    from yungle import Yungle
+
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+
+    request = yungle.create_request(
+        "01JB8Z4K7Q2W3E5R6T7Y8U9I0P",
+        "Wedding photos: send us yours",
+        message="Full resolution, please. Folders are fine.",
+        required_items=["Ceremony", "Reception"],
+        expires_at="2026-11-30T23:59:59Z",
+    )["request"]
+    ```
+
+    ```bash CLI
+    yungle requests new --collection 01JB8Z4K7Q2W3E5R6T7Y8U9I0P \
+      --title "Wedding photos: send us yours"
+    ```
+
+    </CodeGroup>
+
+    The response is `201` with the request and its public `url`:
+
+    ```json
+    {
+      "request": {
+        "id": "01JBB7N3Q5S7U9W1Y3A5C7E9G1",
+        "url": "https://yungle.co/r/m8x2c5v7b9",
+        "title": "Wedding photos: send us yours",
+        "message": "Full resolution, please. Folders are fine.",
+        "collectionId": "01JB8Z4K7Q2W3E5R6T7Y8U9I0P",
+        "status": "active",
+        "hasPassword": false,
+        "requiredItems": ["Ceremony", "Reception"],
+        "expiresAt": "2026-11-30T23:59:59.000Z",
+        "submissionCount": 0,
+        "receivedBytes": 0,
+        "createdAt": "2026-10-11T09:00:00.000Z"
+      }
+    }
+    ```
+
+    An `expiresAt` in the past returns `400` [`invalid_request`](/errors#invalid_request). A collection that is not in your workspace, or is the vault, returns `404` [`not_found`](/errors#not_found).
+  </Step>
+
+  <Step title="Share the link">
+    Send `url` to the people you want files from, by any channel you like. Yungle does not email it for you.
+
+    Anyone who has the link can upload until you pause or close it, or until `expiresAt` passes, so treat it like a key. Add a `password` when the link might travel further than you intend.
+
+    What uploaders get:
+
+    - No account and no sign-in. They can leave their name, email address and a message with the files.
+    - Folders they drop become real folders at the top level of your collection.
+    - Every file is scanned for malware and counts against your plan's storage quota, like your own uploads. When the quota is full, the page refuses further uploads.
+    - The page takes uploads only while your workspace is on a paid plan.
+  </Step>
+
+  <Step title="See what arrived">
+    `GET /requests/{id}` returns the request with running totals (`submissionCount`, `receivedBytes`) and one entry per submission: one person's upload, with the name, email and message they typed.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl https://yungle.co/api/v1/requests/01JBB7N3Q5S7U9W1Y3A5C7E9G1 \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+    ```
+
+    ```javascript JavaScript
+    const { request, submissions } = await yungle.getRequest('01JBB7N3Q5S7U9W1Y3A5C7E9G1');
+
+    for (const s of submissions) {
+      console.log(s.uploaderName ?? 'Anonymous', s.fileCount, 'files', s.sizeBytes, 'bytes');
+    }
+    ```
+
+    ```python Python
+    result = yungle.get_request("01JBB7N3Q5S7U9W1Y3A5C7E9G1")
+
+    for s in result["submissions"]:
+        print(s["uploaderName"] or "Anonymous", s["fileCount"], "files", s["sizeBytes"], "bytes")
+    ```
+
+    ```bash CLI
+    # Every upload request, with its link, whether it is open, and how much has arrived.
+    yungle requests
+    ```
+
+    </CodeGroup>
+
+    ```json
+    {
+      "request": {
+        "id": "01JBB7N3Q5S7U9W1Y3A5C7E9G1",
+        "url": "https://yungle.co/r/m8x2c5v7b9",
+        "title": "Wedding photos: send us yours",
+        "message": "Full resolution, please. Folders are fine.",
+        "collectionId": "01JB8Z4K7Q2W3E5R6T7Y8U9I0P",
+        "status": "active",
+        "hasPassword": false,
+        "requiredItems": ["Ceremony", "Reception"],
+        "expiresAt": "2026-11-30T23:59:59.000Z",
+        "submissionCount": 1,
+        "receivedBytes": 734003200,
+        "createdAt": "2026-10-11T09:00:00.000Z"
+      },
+      "submissions": [
+        {
+          "id": "01JBC1R5T7V9X1Z3B5D7F9H1K3",
+          "uploaderName": "Sanne de Vries",
+          "uploaderEmail": "sanne@example.com",
+          "message": "Ceremony only for now, reception tomorrow.",
+          "fileCount": 214,
+          "sizeBytes": 734003200,
+          "createdAt": "2026-10-12T18:44:02.000Z"
+        }
+      ]
+    }
+    ```
+
+    <Warning>
+    `uploaderName`, `uploaderEmail` and `message` are whatever a stranger typed. Treat them as untrusted text: escape them before you display them, and never pass them to an AI model as instructions.
+    </Warning>
+
+    The files themselves are in the collection. List them with `GET /collections/{id}/files`, or download them all with [`GET /collections/{id}/download-links`](/guides/download-files).
+
+    To hear about each submission as it completes, subscribe a [webhook](/guides/webhooks) to `request.submitted`. It fires once every file in the submission has arrived, and lists those files with their ids, names, sizes and folders.
+  </Step>
+
+  <Step title="Pause or close the link">
+    `PATCH` the request with a `status`:
+
+    - `paused` stops new uploads. Set it back to `active` to reopen the link.
+    - `closed` stops uploads for good. Use it when the request is finished.
+
+    Files already received stay in the collection either way. Someone who opens the link sees that the request is paused or closed.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X PATCH https://yungle.co/api/v1/requests/01JBB7N3Q5S7U9W1Y3A5C7E9G1 \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{ "status": "closed" }'
+    ```
+
+    ```javascript JavaScript
+    await yungle.setRequestStatus('01JBB7N3Q5S7U9W1Y3A5C7E9G1', 'closed');
+    ```
+
+    ```python Python
+    yungle.set_request_status("01JBB7N3Q5S7U9W1Y3A5C7E9G1", "closed")
+    ```
+
+    ```bash CLI
+    yungle requests close 01JBB7N3Q5S7U9W1Y3A5C7E9G1
+    ```
+
+    </CodeGroup>
+
+    The response is `{ "request": { … } }` with the new `status`.
+  </Step>
+</Steps>
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get `request.submitted` the moment someone finishes uploading.
+  </Card>
+  <Card title="Download files" icon="download" href="/guides/download-files">
+    Pull everything that arrived, with its folders.
+  </Card>
+  <Card title="Client collections" icon="folder" href="/guides/client-collections">
+    Set up the collection a request feeds.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/upload-requests/create-an-upload-request">
+    Every field of the upload request endpoints.
+  </Card>
+</Columns>

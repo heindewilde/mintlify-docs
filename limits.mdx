@@ -1,58 +1,94 @@
 ---
-title: "Rate & email limits"
-description: "Request limits, daily ceilings and the outbound email budget on the Yungle API, and how to stay under them."
+title: "Limits"
+description: "Request rate limits, the monthly call allowance, email budgets, and size and count ceilings on the Yungle API, and how to stay under them."
 ---
 
-Two separate budgets: how often you may call, and how many strangers we will email on your behalf. The second is the one worth reading properly.
+import { freeTransfer, freeDays, leafQuota, treeQuota, apiFreeCalls, apiPaidCalls, paidMaxDays } from '/snippets/generated/plan-facts.mdx';
+
+The API has three kinds of limits: how often you may call it, how many people Yungle will email for you, and how big things may be. This page lists each one and what you get back when you reach it.
 
 ## Request limits
 
-| Bucket | Paid plan | Free plan |
+Each request counts against two buckets: one for the API key and one for the workspace.
+
+| Bucket | Free plan | Leaf or Tree |
 | --- | --- | --- |
-| Per key | 120 requests per minute | 12 per minute |
-| Per workspace, per day | 20,000 requests | 1,000 requests |
+| Per API key, per minute | 12 requests | 120 requests |
+| Per workspace, per day | 1,000 requests | 20,000 requests |
 
-Every account can use the API. Transfers, contacts and webhooks work on the free plan; collections need a paid one, and a collection write attempted without it returns `402 upgrade_required` rather than failing halfway through.
+The per-key bucket stops one busy integration from starving another in the same workspace. The per-workspace bucket stops extra keys from multiplying what one workspace can do.
 
-Exceeding either returns `429 rate_limited` with a `Retry-After` header in seconds. The per-key bucket means one noisy integration cannot starve another in the same workspace; the per-workspace one means adding keys does not multiply your reach.
+Going over either returns `429 rate_limited` with a `Retry-After` header in seconds.
 
-Every response past authentication says where you stand, in the IETF draft `RateLimit` header fields — one entry per bucket, so throttle on whichever is closer to empty:
+### Read where you stand
+
+Every response after authentication reports both buckets in the `RateLimit-Policy` and `RateLimit` headers ([IETF draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-ratelimit-headers/)):
 
 ```http
 RateLimit-Policy: "key";q=120;w=60, "workspace";q=20000;w=86400
 RateLimit: "key";r=87;t=34, "workspace";r=19880;t=40211
 ```
 
-`q` is the quota and `w` the window, in seconds; `r` is what is left and `t` the seconds until that window resets. Requests without a valid key are counted per address instead — 60 a minute, reported as an `"ip"` bucket — and a valid key never touches that one.
+`q` is the quota and `w` the window in seconds. `r` is what is left and `t` the seconds until that window resets. Throttle on whichever bucket is closer to empty.
 
-## Email limits, and why they are low
+### Monthly call allowance
 
-Sending a transfer to named recipients makes Yungle email people from our authenticated domain, carrying your text. That capability is worth defending — for you as much as for us, since a domain that gets used for spam stops being delivered to anyone.
+On top of the rate limits, each workspace has a call allowance over a rolling 30-day window: {apiFreeCalls} calls on the free plan and {apiPaidCalls} on a paid plan. It exists to stop runaway scripts and sits well above what a working integration uses. Reaching it returns `429 rate_limited` with `Retry-After: 3600`.
+
+### Requests without a valid key
+
+Requests that fail authentication are counted per IP address: 60 a minute, reported as an `"ip"` bucket in the same headers. After that, they get `429 rate_limited`. A request with a valid key never touches this bucket.
+
+## Email limits
+
+When you send a transfer to recipients or invite guests to a collection, Yungle emails people on your behalf from its own domain. These limits keep that domain trusted, which keeps your emails out of spam folders.
 
 | Budget | Limit |
 | --- | --- |
 | Recipients per transfer | 10 |
-| Recipients emailed per workspace per day | 150 |
-| Collection guest invites | 25 per call, with hourly and daily workspace budgets |
+| Recipients emailed per workspace, per day | 150 |
+| Guest invites per call | 25 |
+| Guest invites per workspace | 30 an hour and 100 a day |
+| Guest invites per person sending them | 20 an hour |
 
-These are counted in **addresses**, not requests — five transfers to ten people each is the same outbound volume as fifty transfers to one, and is charged the same.
+These count **email addresses**, not requests. Five transfers to ten people each use the same budget as fifty transfers to one person.
+
+When a budget runs out, the request returns `429 email_budget_exhausted`.
 
 <Note>
-Exhausting the daily budget returns `429 email_budget_exhausted`. The transfer is still created and its link still works — only the emailing was refused, so you can share the URL yourself and lose nothing.
+If finalizing a transfer hits the daily recipient budget, the transfer is not sent and stays a draft. Finalize it again without `recipients` to make the link live, then share the link yourself.
 </Note>
 
-## Staying under them
+### Stay under the email limits
 
-- **Default to link-only.** Omit `recipients` when finalizing and hand the returned `url` to whatever already talks to your client — a project tool, a chat channel, your own email. It costs nothing from the budget and usually arrives somewhere they are already looking.
-- **One transfer, many recipients** beats one transfer each: it is the same email budget but far fewer requests, and everyone sees the same link.
-- **Poll politely.** Download receipts change when a human clicks something. Once a minute is plenty; once a second buys you nothing but a 429.
+- **Send link-only by default.** Leave out `recipients` when you finalize, and hand the returned `url` to whatever already talks to your client: a project tool, a chat channel, your own email. Link-only sends use no email budget.
+- **Use one transfer for many recipients**, rather than one transfer each. It costs the same email budget and far fewer requests, and everyone gets the same link.
+- **Use webhooks instead of polling** for download receipts. See [Webhooks](/guides/webhooks).
 
-## Size and count ceilings
+## Size and count limits
 
-| Thing | Limit |
+| What | Limit |
 | --- | --- |
-| Files per registration call | 500 |
-| One transfer | Your plan's storage quota, as a ceiling |
-| Collection storage | Your plan's quota, reserved before upload |
-| Folder depth | 10 |
-| Download events returned | 200 most recent |
+| One transfer | {freeTransfer} on the free plan; the plan's storage ({leafQuota} or {treeQuota}) on Leaf or Tree |
+| Transfer lifetime | {freeDays} days on the free plan, up to {paidMaxDays} on a paid plan. A longer `expiresInDays` is clamped to the maximum, not refused. |
+| One file | 1 TB |
+| Collection storage | The plan's storage, shared by all collections. Reserved when you register files, so a full workspace gets `413 quota_exceeded` before any bytes move. |
+| Files you upload, per create or add call | 500 |
+| URL imports, per create or add call | 20 |
+| File ids per collection-file delete call | 500 |
+| Folder depth | 10 levels |
+| Upload token lifetime | 2 hours, renewable while it is still valid |
+| Download receipts returned | The 200 most recent download events |
+| Webhook endpoints | 1 on the free plan, 10 on Leaf or Tree |
+| Webhook events kept for pull endpoints | 30 days |
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Errors" icon="triangle-exclamation" href="/errors">
+    What each error code means and when to retry.
+  </Card>
+  <Card title="Pagination and idempotency" icon="arrows-rotate" href="/pagination-and-idempotency">
+    Walk long lists and retry writes safely.
+  </Card>
+</Columns>

@@ -1,0 +1,286 @@
+---
+title: "Give each client a collection"
+sidebarTitle: "Client collections"
+description: "Create a collection per client from your own system, upload folders into it with their structure intact, and invite the client as a guest."
+---
+
+import { leafPrice, treePrice } from "/snippets/generated/plan-facts.mdx";
+
+A [collection](/concepts) is one lasting place for everything you deliver to a client. Create one per client from your own onboarding code, fill it with folders, and invite the client by email.
+
+## Prerequisites
+
+- A workspace on **Leaf** ({leafPrice}/month) or **Tree** ({treePrice}/month). Collections are part of the paid plans; on the free plan every collection endpoint answers `402` [`upgrade_required`](/errors#upgrade_required). See [pricing](https://yungle.co/pricing).
+- An [API key](/authentication) with the `collections:read` and `collections:write` scopes, exported as `YUNGLE_API_KEY`.
+- Optional: the [CLI](/cli) (`npm install -g yungle-cli`) or one of the [SDKs](/sdks), which handle the upload protocol for you.
+
+## Steps
+
+<Steps>
+  <Step title="Create the collection">
+    Send a title and, optionally, a description. The URL slug comes from the title and is unique within your workspace.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/collections \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"title": "De Vries BV", "description": "Everything we deliver, in one place."}'
+    ```
+
+    ```javascript JavaScript
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+
+    const { collection } = await yungle.createCollection({
+      title: 'De Vries BV',
+      description: 'Everything we deliver, in one place.',
+    });
+    ```
+
+    ```python Python
+    from yungle import Yungle
+
+    yungle = Yungle()  # reads YUNGLE_API_KEY
+
+    collection = yungle.create_collection(
+        "De Vries BV", description="Everything we deliver, in one place."
+    )["collection"]
+    ```
+
+    </CodeGroup>
+
+    The response carries the collection's `id` and its secret link in `url`:
+
+    ```json
+    {
+      "collection": {
+        "id": "01JB8Z4K7Q2W3E5R6T7Y8U9I0P",
+        "title": "De Vries BV",
+        "slug": "de-vries-bv",
+        "description": "Everything we deliver, in one place.",
+        "visibility": "private",
+        "url": "https://yungle.co/c/q8Xr2vLm9KpT4wZn6YbH3s",
+        "customLink": false,
+        "sizeBytes": 0,
+        "coverFileId": null,
+        "expiresAt": null,
+        "createdAt": "2026-10-11T09:12:44.512Z",
+        "updatedAt": "2026-10-11T09:12:44.512Z"
+      }
+    }
+    ```
+
+    Store the `id` against the client in your own system. Every later call needs it.
+  </Step>
+
+  <Step title="Upload folders into it">
+    Register each file with a `path`, the folder it belongs in. Yungle builds the folder tree for you in one transaction. Registering the same folder again adds to the folders that already exist instead of making a copy.
+
+    <CodeGroup>
+
+    ```bash curl
+    # Registers two files; the bytes then go to tusEndpoint (see "Upload large files").
+    curl -X POST https://yungle.co/api/v1/collections/01JB8Z4K7Q2W3E5R6T7Y8U9I0P/files \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "files": [
+          { "name": "Report.pdf",   "size": 2481152, "path": "Q3" },
+          { "name": "Figures.xlsx", "size": 88320,   "path": "Q3/Appendix" }
+        ]
+      }'
+    ```
+
+    ```javascript JavaScript
+    import { openAsBlob, statSync } from 'node:fs';
+    import { YungleClient } from 'yungle-client';
+
+    const yungle = new YungleClient({ apiKey: process.env.YUNGLE_API_KEY });
+    const collectionId = '01JB8Z4K7Q2W3E5R6T7Y8U9I0P';
+
+    // size must be the exact byte count, so read it from disk.
+    const local = [
+      { name: 'Report.pdf', path: 'Q3' },
+      { name: 'Figures.xlsx', path: 'Q3/Appendix' },
+    ].map((f) => ({ ...f, file: `./Deliverables/${f.path}/${f.name}` }));
+
+    const targets = await yungle.addCollectionFiles(
+      collectionId,
+      local.map(({ name, path, file }) => ({ name, path, size: statSync(file).size })),
+    );
+
+    // Targets come back in the order you registered the files.
+    for (const [i, target] of targets.files.entries()) {
+      await yungle.uploadFile(targets.tusEndpoint, target, await openAsBlob(local[i].file));
+    }
+    ```
+
+    ```python Python
+    import os
+    from yungle import Yungle, upload_file
+
+    yungle = Yungle()
+    collection_id = "01JB8Z4K7Q2W3E5R6T7Y8U9I0P"
+
+    local = [("Q3", "Report.pdf"), ("Q3/Appendix", "Figures.xlsx")]
+    paths = [os.path.join("Deliverables", folder, name) for folder, name in local]
+
+    targets = yungle.add_collection_files(
+        collection_id,
+        [
+            {"name": name, "path": folder, "size": os.path.getsize(p)}
+            for (folder, name), p in zip(local, paths)
+        ],
+    )
+
+    # Targets come back in the order you registered the files.
+    for target, p in zip(targets["files"], paths):
+        upload_file(targets["tusEndpoint"], target, p)
+    ```
+
+    ```bash CLI
+    # Walks the folder and recreates its tree inside the collection.
+    yungle push ./Deliverables --collection 01JB8Z4K7Q2W3E5R6T7Y8U9I0P
+    ```
+
+    </CodeGroup>
+
+    Registering returns one upload target per file:
+
+    ```json
+    {
+      "tusEndpoint": "https://yungle.co/files",
+      "files": [
+        {
+          "id": "01JB8Z9M3N4B5V6C7X8Z9A0S1D",
+          "name": "Report.pdf",
+          "size": 2481152,
+          "uploadToken": "eyJmaWxlSWQiOi…",
+          "uploadTokenExpiresAt": "2026-10-11T11:14:02.000Z"
+        },
+        {
+          "id": "01JB8Z9M3N4B5V6C7X8Z9A0S1E",
+          "name": "Figures.xlsx",
+          "size": 88320,
+          "uploadToken": "eyJmaWxlSWQiOi…",
+          "uploadTokenExpiresAt": "2026-10-11T11:14:02.000Z"
+        }
+      ],
+      "imports": []
+    }
+    ```
+
+    The SDKs and the CLI upload the bytes for you. With curl, follow [Upload large files](/guides/upload-large-files) to send each file to `tusEndpoint`.
+
+    <Note>
+      Storage is reserved when you register, counting files already stored and uploads in flight. If the batch does not fit, you get `413` [`quota_exceeded`](/errors#quota_exceeded) and nothing is created: no folders, no file rows.
+    </Note>
+  </Step>
+
+  <Step title="Invite the client as a guest">
+    Send up to 25 addresses per call. Each one gets an email with an invite link that works for 7 days. Inviting the same address twice is safe.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl -X POST https://yungle.co/api/v1/collections/01JB8Z4K7Q2W3E5R6T7Y8U9I0P/guests \
+      -H "Authorization: Bearer $YUNGLE_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"emails": ["anna@devries.example"]}'
+    ```
+
+    ```javascript JavaScript
+    const { invited } = await yungle.inviteGuests('01JB8Z4K7Q2W3E5R6T7Y8U9I0P', [
+      'anna@devries.example',
+    ]);
+    ```
+
+    ```python Python
+    invited = yungle.invite_guests(
+        "01JB8Z4K7Q2W3E5R6T7Y8U9I0P", ["anna@devries.example"]
+    )["invited"]
+    ```
+
+    </CodeGroup>
+
+    The response lists the addresses that were emailed, lowercased and without duplicates:
+
+    ```json
+    { "invited": ["anna@devries.example"] }
+    ```
+
+    A [guest](/concepts) can open, view and download this one collection and nothing else. Guests are free and unlimited on every paid plan. Invites count against your workspace's email budget; when it is spent you get `429` [`email_budget_exhausted`](/errors#email_budget_exhausted).
+  </Step>
+
+  <Step title="Check and revoke access">
+    List the guests to see who has accepted: `status` is `invited` until they open the invite, then `active`. Remove a guest to cut off access.
+
+    <CodeGroup>
+
+    ```bash curl
+    curl https://yungle.co/api/v1/collections/01JB8Z4K7Q2W3E5R6T7Y8U9I0P/guests \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+
+    # → { "guests": [ { "id": "01JB8ZC4…", "email": "anna@devries.example", "status": "invited" } ] }
+
+    curl -X DELETE https://yungle.co/api/v1/collections/01JB8Z4K7Q2W3E5R6T7Y8U9I0P/guests/<guest-id> \
+      -H "Authorization: Bearer $YUNGLE_API_KEY"
+
+    # → { "removed": true }
+    ```
+
+    ```javascript JavaScript
+    const { guests } = await yungle.listGuests('01JB8Z4K7Q2W3E5R6T7Y8U9I0P');
+    await yungle.removeGuest('01JB8Z4K7Q2W3E5R6T7Y8U9I0P', guests[0].id);
+    ```
+
+    ```python Python
+    guests = yungle.list_guests("01JB8Z4K7Q2W3E5R6T7Y8U9I0P")["guests"]
+    yungle.remove_guest("01JB8Z4K7Q2W3E5R6T7Y8U9I0P", guests[0]["id"])
+    ```
+
+    </CodeGroup>
+
+    Removing a guest takes effect immediately and also cancels an invite they have not accepted yet.
+  </Step>
+</Steps>
+
+## Who can open the collection
+
+The link says where the collection is. The collection's visibility says who gets in.
+
+| Visibility | Shown in the dashboard as | Who gets in |
+| --- | --- | --- |
+| `private` | Private | You, your workspace, and guests you invited, signed in with the address you invited. |
+| `public` | Anyone with the link | Anyone holding the secret link. No sign-in. |
+| `password` | Link and password | Anyone holding the secret link who also enters the password. |
+
+Every collection starts as `private`, including those you create through the API. In that state, holding the link is not enough: only invited guests get in. To let your client in by link alone, open the collection in the [dashboard](https://yungle.co/dashboard/collections) and change who can open it. The API cannot change visibility; `PATCH /collections/{id}` accepts only `title` and `description`.
+
+The secret link (`url`) is 128 bits and checked on every request. Renaming the collection never changes it.
+
+## Custom domains
+
+On **Tree**, you can connect your own domain in the dashboard. A collection can then also be reached at `yourdomain.com/<slug>`.
+
+That readable address is off for every collection you create through the API (`customLink: false`). A readable address can be guessed, so you switch it on per collection in the dashboard, where the warning sits next to the control. Even when it is on, visibility still decides who gets in.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Upload large files" icon="upload" href="/guides/upload-large-files">
+    Send the bytes yourself with tus, and resume after a dropped connection.
+  </Card>
+  <Card title="Receive files" icon="inbox" href="/guides/receive-files">
+    Give a client an upload request that drops their files into the collection.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get a `collection.file_uploaded` event when a file lands.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/collections/create-a-collection">
+    Every collection endpoint, with its full schema.
+  </Card>
+</Columns>

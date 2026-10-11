@@ -26,48 +26,49 @@
         "groups": [
           {
             "group": "Get started",
-            "pages": ["index", "quickstart", "authentication"]
+            "pages": [
+              "index",
+              "quickstart",
+              "authentication",
+              "concepts"
+            ]
           },
           {
             "group": "Guides",
             "pages": [
-              "guides/send-large-files-from-the-command-line",
-              "guides/file-transfer-for-ai-agents",
-              "guides/wetransfer-alternative-with-an-api"
-            ]
-          },
-          {
-            "group": "Recipes",
-            "pages": [
-              "recipes/ci-artefacts",
-              "recipes/nightly-report",
-              "recipes/python",
-              "recipes/client-collection",
-              "recipes/agent-hand-off",
-              "recipes/slack-on-download"
-            ]
-          },
-          {
-            "group": "Working with the API",
-            "pages": [
-              "uploads",
-              "downloads",
-              "transfers",
-              "collections",
-              "contacts",
-              "webhooks",
-              "errors",
-              "limits",
-              "unsupported"
+              "guides/send-a-transfer",
+              "guides/upload-large-files",
+              "guides/receive-files",
+              "guides/client-collections",
+              "guides/download-files",
+              "guides/webhooks",
+              "guides/contacts",
+              "guides/send-from-ci",
+              "guides/send-from-python"
             ]
           },
           {
             "group": "Tools",
-            "pages": ["cli", "mcp"]
+            "pages": [
+              "cli",
+              "mcp",
+              "sdks"
+            ]
           },
           {
-            "group": "Updates",
-            "pages": ["changelog"]
+            "group": "Reference",
+            "pages": [
+              "errors",
+              "limits",
+              "pagination-and-idempotency",
+              "unsupported"
+            ]
+          },
+          {
+            "group": "Changelog",
+            "pages": [
+              "changelog"
+            ]
           }
         ]
       },
@@ -76,7 +77,9 @@
         "groups": [
           {
             "group": "Overview",
-            "pages": ["api-reference/index"]
+            "pages": [
+              "api-reference/index"
+            ]
           }
         ],
         "openapi": "https://yungle.co/api/v1/openapi.json"
@@ -85,8 +88,14 @@
   },
   "navbar": {
     "links": [
-      { "label": "Pricing", "href": "https://yungle.co/pricing" },
-      { "type": "github", "href": "https://github.com/heindewilde/yungle-clients" }
+      {
+        "label": "Pricing",
+        "href": "https://yungle.co/pricing"
+      },
+      {
+        "type": "github",
+        "href": "https://github.com/heindewilde/yungle-clients"
+      }
     ],
     "primary": {
       "type": "button",
@@ -95,7 +104,16 @@
     }
   },
   "contextual": {
-    "options": ["copy", "view", "claude", "chatgpt", "mcp", "cursor", "vscode", "download-spec"]
+    "options": [
+      "copy",
+      "view",
+      "claude",
+      "chatgpt",
+      "mcp",
+      "cursor",
+      "vscode",
+      "download-spec"
+    ]
   },
   "seo": {
     "metatags": {
@@ -111,12 +129,100 @@
       {
         "header": "Yungle",
         "items": [
-          { "label": "Home", "href": "https://yungle.co" },
-          { "label": "Pricing", "href": "https://yungle.co/pricing" },
-          { "label": "Security", "href": "https://yungle.co/security" },
-          { "label": "Contact", "href": "https://yungle.co/contact" }
+          {
+            "label": "Home",
+            "href": "https://yungle.co"
+          },
+          {
+            "label": "Pricing",
+            "href": "https://yungle.co/pricing"
+          },
+          {
+            "label": "Security",
+            "href": "https://yungle.co/security"
+          },
+          {
+            "label": "Contact",
+            "href": "https://yungle.co/contact"
+          }
         ]
       }
     ]
-  }
+  },
+  "fonts": {
+    "heading": {
+      "family": "Pally",
+      "weight": 500,
+      "source": "https://cdn.fontshare.com/wf/PNZYLAZIWZGWSDKVWN7N3EFNNI7IKEIS/76V4OFN3WI2NMZTXX5EY2GKDEZ6G4ACO/M6G3U44JEMF4HNADZG3WKRAKS2U5VMIO.woff2",
+      "format": "woff2"
+    },
+    "body": {
+      "family": "Satoshi",
+      "weight": 400,
+      "source": "https://cdn.fontshare.com/wf/TTX2Z3BF3P6Y5BQT3IV2VNOK6FL22KUT/7QYRJOI3JIMYHGY6CH7SOIFRQLZOLNJ6/KFIAZD4RUMEZIYV6FQ3T3GP5PDBDB6JY.woff2",
+      "format": "woff2"
+    }
+  },
+  "redirects": [
+    {
+      "source": "/transfers",
+      "destination": "/guides/send-a-transfer"
+    },
+    {
+      "source": "/uploads",
+      "destination": "/guides/upload-large-files"
+    },
+    {
+      "source": "/downloads",
+      "destination": "/guides/download-files"
+    },
+    {
+      "source": "/collections",
+      "destination": "/guides/client-collections"
+    },
+    {
+      "source": "/contacts",
+      "destination": "/guides/contacts"
+    },
+    {
+      "source": "/webhooks",
+      "destination": "/guides/webhooks"
+    },
+    {
+      "source": "/recipes/ci-artefacts",
+      "destination": "/guides/send-from-ci"
+    },
+    {
+      "source": "/recipes/nightly-report",
+      "destination": "/guides/send-from-ci"
+    },
+    {
+      "source": "/recipes/python",
+      "destination": "/guides/send-from-python"
+    },
+    {
+      "source": "/recipes/client-collection",
+      "destination": "/guides/client-collections"
+    },
+    {
+      "source": "/recipes/agent-hand-off",
+      "destination": "/mcp"
+    },
+    {
+      "source": "/recipes/slack-on-download",
+      "destination": "/guides/webhooks"
+    },
+    {
+      "source": "/guides/send-large-files-from-the-command-line",
+      "destination": "/cli"
+    },
+    {
+      "source": "/guides/file-transfer-for-ai-agents",
+      "destination": "/mcp"
+    },
+    {
+      "source": "/reference",
+      "destination": "/api-reference"
+    }
+  ]
 }

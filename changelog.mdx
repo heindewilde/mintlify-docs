@@ -1,11 +1,17 @@
 ---
 title: "Changelog"
-description: "What changed in the Yungle API and when, plus the versioning policy: /api/v1 is additive-only."
+description: "What changed in the Yungle API, uploads, OAuth, MCP, CLI, SDKs and browser extension, and the versioning policy for /api/v1."
 ---
+
+import { apiFreeUsage, apiFreeCalls, apiPricePerGb } from '/snippets/generated/plan-facts.mdx';
+
+This page lists every change a developer would notice: the REST API, uploads and downloads, OAuth and the hosted MCP server, and the client packages (`yungle-cli`, `yungle-mcp`, `yungle-client`, `yungle`, `yungle-e2e` and the browser extension). Newest first.
+
+## Versioning
 
 `/api/v1` is additive-only. New fields and endpoints may appear here; nothing existing will change meaning, disappear, or become required. Anything that would break a client ships as `/api/v2`, and v1 keeps working.
 
-## What counts as additive
+### What counts as additive
 
 - A new endpoint, or a new method on an existing one.
 - A new optional request field.
@@ -14,6 +20,8 @@ description: "What changed in the Yungle API and when, plus the versioning polic
 - A new scope. Existing keys keep exactly the scopes they were issued.
 
 What will not happen without a version bump: removing or renaming a field, changing a field's type, making an optional field required, changing the status code for an existing condition, or narrowing what a scope grants.
+
+The client packages follow semver. While they are below 1.0, a minor version (0.2 → 0.3) may change behaviour; each one is listed below.
 
 ## Deprecation and sunset
 
@@ -25,17 +33,74 @@ No v1 operation is deprecated today. If one ever is, it keeps working for **at l
 
 A version as a whole is retired the same way, with the same six months at least, and only after its successor has shipped: when `/api/v2` exists, `/api/v1` keeps working until its own `Sunset` date.
 
-<Update label="2026-09-29">
+## Changes
 
-- **Uploads longer than two hours.** Upload targets carry `uploadTokenExpiresAt`, and `POST /api/uploads/token` trades a still-valid token for a fresh one. See [Uploading files](/uploads).
-- **Downloads.** `GET /transfers/{id}/download-links`, `GET /collections/{id}/download-links` and `POST /links/resolve` return signed, resumable URLs for your own files and for links shared with you. New error codes `password_required`, `wrong_password`, `guests_only` (403), `link_unavailable` (410) and `e2ee_unsupported` (409).
-- **Imports from URLs.** `imports` on `POST /transfers`, `POST /transfers/{id}/files` and `POST /collections/{id}/files`; `files` may now be empty when `imports` is not. Responses gain an `imports` array; follow one with `GET /imports/{fileId}`.
-- `crc32` on transfer files, collection files and download links.
-- **Upload requests.** `GET`/`POST /requests`, `GET`/`PATCH /requests/{id}`, and the paid webhook event `request.submitted`. `collection.file_uploaded` reports `source: "import"` for a file fetched from a URL.
+<Update label="2026-10-11" tags={["Uploads","API","Extension"]}>
+
+- A zero-byte file now completes as soon as its tus upload is created. Before, it stayed `uploading` forever, and its transfer's "ready" email never went out.
+- A webhook delivery now gives up after 10 seconds in total. Before, only an idle timeout applied, so a receiver that sent a byte every few seconds held up deliveries.
+- Browser extension 0.1.4: plain (not end-to-end encrypted) uploads send one server part per tus `PATCH`. A large file on a slow connection is no longer cut off by the 30-minute limit on a single request. Submitted to the Chrome Web Store and Firefox Add-ons for review.
 
 </Update>
 
-<Update label="2026-09-27">
+<Update label="2026-10-05" tags={["Uploads"]}>
+
+- A single tus `PATCH` is no longer cut after five minutes. From 2026-09-30 to 2026-10-05, any upload request that took longer was cut and had to resume from the last committed part.
+- An upload that runs for more than 24 hours is no longer aborted by the storage cleanup sweep while it is still active.
+- A file whose upload was recovered after a server crash no longer carries a wrong `crc32`. Collection zips containing such a file declared a bad checksum for it.
+- Collection zips order files with the same creation time the same way on every request, so a ranged resume always gets the same layout. The `ETag` of affected zips changed once.
+
+</Update>
+
+<Update label="2026-10-01" tags={["OAuth"]}>
+
+- Every authorization response, error responses included, carries the `iss` parameter (RFC 9207). The metadata at `/.well-known/oauth-authorization-server` advertises `authorization_response_iss_parameter_supported`.
+
+</Update>
+
+<Update label="2026-09-29" tags={["API","Uploads","MCP","CLI","JS SDK","E2E","Extension"]}>
+
+- **Uploads longer than two hours.** Upload targets carry `uploadTokenExpiresAt`, and `POST /api/uploads/token` trades a still-valid token for a fresh one. See [uploading large files](/guides/upload-large-files).
+- **Downloads.** `GET /transfers/{id}/download-links`, `GET /collections/{id}/download-links` and `POST /links/resolve` return signed, resumable URLs for your own files and for links shared with you. New error codes `password_required`, `wrong_password`, `guests_only` (403), `link_unavailable` (410) and `e2ee_unsupported` (409). See [downloading files](/guides/download-files).
+- **Imports from URLs.** `imports` on `POST /transfers`, `POST /transfers/{id}/files` and `POST /collections/{id}/files`; `files` may now be empty when `imports` is not. Responses gain an `imports` array; follow one with `GET /imports/{fileId}`.
+- `crc32` on transfer files, collection files and download links.
+- **Upload requests.** `GET`/`POST /requests`, `GET`/`PATCH /requests/{id}`, and the paid webhook event `request.submitted`. `collection.file_uploaded` reports `source: "import"` for a file fetched from a URL.
+- **End-to-end encrypted transfers.** `e2ee: true` on `POST /transfers`, `POST /transfers/{id}/files/{fileId}/sealed` for each file's sealed name and thumbnail, and `e2eeMeta` on `POST /transfers/{id}/finalize`. Transfers report `e2ee`, so a client knows not to offer a link without its key. Such a transfer takes no title, imports, recipients or password.
+- yungle-cli 0.3.0:
+  - `yungle get` takes collection links and keeps folder structure.
+  - `yungle pull --collection <id>` downloads your own collection, and on a second run fetches only what is new.
+  - `yungle put` runs the keyless upload commands that the MCP `create_transfer` tool returns.
+  - `yungle requests` lists upload requests; `requests new --collection <id> --title …` creates one; `pause`, `resume`, `close` and `show` manage them.
+  - `yungle send` and `yungle push` take `--from-url <url>` (repeatable).
+  - `send`, `push` and `watch` renew the upload token, so a run longer than two hours completes, and a killed run still resumes.
+  - Downloads are checked against the server's CRC-32, and a damaged copy is deleted.
+  - Fixed: a repeated `--to` kept only the last address. JSON errors from `yungle get` carry the server's error code, and a cancelled prompt exits 130.
+- yungle-mcp 0.3.0, and the hosted server at `/mcp`:
+  - New tools: `share_from_urls`, `get_import_status`, `get_download_links`, `list_upload_requests` and `get_upload_request`. The server can read upload requests but not create them.
+  - `create_transfer` returns one upload command per file, and `finalize_transfer` turns the draft into a link.
+  - Local server only: `download_files`. `share_local_files` resumes after a dropped connection, takes folders and reports progress.
+- yungle-client 0.3.0:
+  - `uploadFile` (and `client.uploadFile`): a resumable tus upload from any `Blob`, with no dependencies, that retries after drops and renews its token.
+  - `createTokenKeeper`, `renewUploadToken` and `client.renewUploadToken()`.
+  - `transferDownloadLinks`, `collectionDownloadLinks` and `resolveLink`.
+  - `imports` on `createTransfer`, `addTransferFiles` and `addCollectionFiles`, followed with `getImport` and `waitForImports`.
+  - `listRequests`, `createRequest`, `getRequest`, `setRequestStatus`, and the `request.submitted` webhook type.
+  - `createTransfer({ e2ee: true })`, `sealTransferFile()`, and `e2eeMeta` on `finalizeTransfer`.
+  - Errors carry `docs`. `retryAfterSeconds` reads the `Retry-After` header when the body gives no wait, so the monthly-allowance `429` is retried after an hour instead of half a second.
+  - Timestamps the API always sends (`createdAt`, `updatedAt`, a transfer's `expiresAt`) are no longer typed as nullable. Pulled webhook events have a named type, `PulledWebhookEvent`.
+- yungle-client 0.3.1: `getReferral()`.
+- yungle-e2e 0.2.0, first release: the end-to-end encryption core (ciphertext format, key derivation, sealed metadata), published so the code that runs in your browser is public.
+- Browser extension 0.1.1, first release, for Chrome, Edge, Brave and Firefox: send files from the toolbar, and add a Yungle link while writing in Gmail or Outlook on the web. Uploads through the extension count against your plan, not against API usage. Version 0.1.3 set Firefox 140 as the minimum.
+
+</Update>
+
+<Update label="2026-09-28" tags={["API"]}>
+
+- `GET /me/referral` returns your invite code and link, and the free months it has earned. Any scope can read it, on every plan.
+
+</Update>
+
+<Update label="2026-09-27" tags={["API"]}>
 
 - Every response past authentication carries `RateLimit` and `RateLimit-Policy` headers (the IETF draft fields), one entry per bucket you were charged against. See [limits](/limits).
 - Error bodies gain `error.docs`, a link to the row on the [errors](/errors) page that explains the code.
@@ -43,36 +108,90 @@ A version as a whole is retired the same way, with the same six months at least,
 - Repeated requests with no valid key from one address are limited to 60 a minute, then answered `429 rate_limited`. A valid key never counts against this.
 - The OpenAPI document gives every operation an `operationId`, and every 4xx and 5xx one shared, typed `Error` schema.
 - Every success response is now typed in the OpenAPI document, with the resources named under `components/schemas`, and the [reference](/api-reference) lists response fields. Nothing on the wire changed. The document now also gives the real status for `POST /webhooks/{id}/test` and `POST /webhooks/{id}/deliveries/{deliveryId}/retry`: both have always answered `202`, and it used to say `200`.
+- The OpenAPI document no longer marks five fields as nullable that never are: `expiresAt` on `Transfer` and `TransferSummary`, `sessionId` on `Download`, and `mimeType` on `TransferFile` and `CollectionFile`.
 
 </Update>
 
-<Update label="2026-09-26">
+<Update label="2026-09-26" tags={["API","OAuth","MCP","CLI","JS SDK","Python SDK"]}>
 
 - `opened` on a recipient is now always `false`. Whether someone loaded a transfer page is no longer recorded — a sender learns whether the files were downloaded, and nothing about the visit before that. The field stays in the response because removing one needs a version bump.
-- Webhooks: signed pushes for `transfer.ready`, `transfer.downloaded`, `transfer.expiring`, `transfer.expired` and `collection.file_uploaded`, or pull endpoints read from `/webhooks/{id}/events`. New scopes `webhooks:read` and `webhooks:write`.
-- OAuth 2.1 sign-in for apps (`/.well-known/oauth-authorization-server`), and the hosted MCP server at `/mcp`. An access token works on `/api/v1` like a key; an app may email recipients only if the user allowed `transfers:send`, and otherwise gets `403 insufficient_scope`.
+- Webhooks: signed pushes for `transfer.ready`, `transfer.downloaded`, `transfer.expiring`, `transfer.expired` and `collection.file_uploaded`, or pull endpoints read from `/webhooks/{id}/events`. New scopes `webhooks:read` and `webhooks:write`. See [webhooks](/guides/webhooks).
+- OAuth 2.1 sign-in for apps (`/.well-known/oauth-authorization-server`): authorization code with PKCE (S256), open client registration, refresh-token rotation, revocation, and a device flow for first-party clients. An access token works on `/api/v1` like a key; an app may email recipients only if the user allowed `transfers:send`, and otherwise gets `403 insufficient_scope`.
+- The hosted MCP server at `https://yungle.co/mcp` (Streamable HTTP), signed in with OAuth. See [MCP](/mcp).
 - `GET /me` reports `key.via` (`key` or `oauth`) and `key.canEmail`.
+- yungle-cli 0.2.0:
+  - `yungle login` signs you in from the browser, also over SSH; `yungle logout` revokes the session. `yungle login --key` saves an API key. A browser sign-in makes links but never emails anyone: `yungle send --to` checks this before uploading.
+  - New commands: `get <link>` (downloads a transfer someone sent you, no key needed), `status`, `open`, `watch <dir> --collection <id>`, `completion`, `whoami`, `transfers`, `collections`, `contacts`, `revoke`, `webhooks ls` and `webhooks listen` (with `--forward-to` for a local server), and `--version`.
+  - Run `yungle` on its own for a guided menu. It never prompts in scripts, in CI, or with `--json`/`--yes`.
+  - Commands accept the short ID from `yungle transfers` or a transfer's link. The old spellings (`auth login`, `ls transfers`, `rm transfer`) still work.
+  - `yungle mcp install --allow-write` accepts a key with `transfers:write`.
+  - Also installable with Homebrew (`brew install heindewilde/yungle/yungle`), and from CI with the [`heindewilde/yungle-send-action`](https://github.com/heindewilde/yungle-send-action) GitHub Action.
+- yungle-cli 0.2.1: `yungle status` no longer shows opens.
+- yungle-mcp 0.2.0:
+  - New tools: `create_share_link` (shares content you pass it as a link, emails nobody) and, local server only, `share_local_files` (refuses hidden files).
+  - `send_transfer` exists only when the credential may send email, and asks you to confirm every send. A client that cannot ask gets the link instead.
+  - The package exports `createServer` for running it over HTTP, and reports its real version in the handshake.
+- yungle-mcp 0.2.1–0.2.4: every tool repeats its title in `annotations.title`; without `YUNGLE_API_KEY` the server starts and lists its read tools, and every call says the key is missing; tool descriptions only describe what each tool does.
+- yungle-client 0.2.0:
+  - `listTransfers` and `listCollectionFiles` take `{ limit, cursor }` and return `nextCursor`; `allTransfers()` and `allCollectionFiles()` walk every page.
+  - Every `POST` sends an `Idempotency-Key` and reuses it when retrying.
+  - Every webhook endpoint, and `verifyWebhook()` to check a `Yungle-Signature` header on Node, Bun, Deno and edge runtimes.
+  - `me().key` reports `via` and `canEmail`. A `userAgent` option, and each client sends `yungle-client/<version>` (or `yungle-cli`, `yungle-mcp`) in `User-Agent`.
+- yungle-client 0.2.1: `RecipientStatus.opened` is deprecated.
+- Python SDK `yungle` 0.1.0, first release: a method for every endpoint, a one-call `send()`, `upload_file()` for resumable tus uploads, `all_transfers()` and `all_collection_files()`, automatic `Idempotency-Key` on retries, `YungleError`, and `verify_webhook()`.
 
 </Update>
 
-<Update label="2026-09-25">
+<Update label="2026-09-25" tags={["API"]}>
 
 - `GET /transfers` and `GET /collections/{id}/files` take `limit` and `cursor`, and return `nextCursor`. With neither parameter, both answer exactly as before: the latest 100 transfers, and every file.
 - Every `POST` accepts an `Idempotency-Key` header. A retry with the same key replays the original success instead of creating a second one.
 - Free accounts can create keys with transfers:write and contacts:write, which the API already accepted. Settings used to offer them read-only keys only.
+- Fixed: files registered with `POST /transfers` and `POST /collections/{id}/files` now count toward API upload usage, and are checked against it before the upload starts, like every other API upload. Past the included usage with no credit, they answer `402 out_of_credit`.
+- Fixed: `/api/v1` only reaches transfers and collections in the key's own workspace.
+- File names are cleaned of control characters and bidirectional overrides when a file is created, and a MIME type must be a plain `type/subtype`.
 
 </Update>
 
-<Update label="2026-09-20">
+<Update label="2026-09-20" tags={["API"]}>
 
 - `ipTruncated` on a download receipt is now always `null`. The truncated IP address is no longer recorded at all — telling a sender where their recipient downloaded from is profiling we would rather not do. The field stays in the response, and stays nullable, because removing one needs a version bump.
 - Download receipts, per-recipient delivery status and the transfer detail view are free on every account. They used to need a plan.
 - Recipients now report three states rather than two: emailed, opened, and downloaded.
-- Transfers can be given any expiry up to your plan’s maximum at creation, rather than only afterwards.
+- Transfers can be given any expiry up to your plan's maximum at creation, rather than only afterwards.
 
 </Update>
 
-<Update label="2026-07-29" description="v1">
+<Update label="2026-09-10" tags={["Uploads"]}>
+
+- A whole-collection zip download sends `Content-Length`, so a client can show progress and tell a finished archive from one that was cut off.
+- A collection zip can be resumed with a `Range` request, checked with `If-Range` against its `ETag`. If the collection changed in the meantime you get a fresh `200` instead of a corrupt splice. A collection holding files from before this change answers `accept-ranges: none` until their checksums are filled in.
+- The upload service finishes in-flight requests during a deploy instead of cutting them. While it restarts, upload requests can get `502`, `503` or `504`: retry those.
+
+</Update>
+
+<Update label="2026-07-31" tags={["API"]}>
+
+- **Breaking:** `workspace.handle` on `GET /me` became `workspace.customDomain`. Handles were removed; no account had claimed one.
+- **Breaking:** `GET /transfers/{id}/downloads` needed a paid plan, and answered `402` on a free account. This was reversed on 2026-09-20.
+- Free accounts can create transfers and contacts through the API (`transfers:write`, `contacts:write`). Collections still need a plan.
+- A monthly call allowance: {apiFreeCalls} calls a month on a free account, and a higher one on a paid plan. Past it, the API answers `429` with `Retry-After`.
+- API uploads are metered apart from the plans: {apiFreeUsage} a month free, then {apiPricePerGb}/GB from prepaid credit, on every plan. The check runs before the upload starts.
+
+</Update>
+
+<Update label="2026-07-30" tags={["API","CLI","MCP","JS SDK"]}>
+
+- Reads are free on every account. Writes answered `402 upgrade_required` on a free account until 2026-07-31.
+- `GET /me` accepts a key with any scope. It used to refuse a key without `contacts:read`.
+- yungle-cli 0.1.0, first release: `auth login`, `auth status`, `send`, `push --collection`, `ls`, `rm transfer`, and `--json` on every command. An interrupted `send` resumes from the last committed part when you run it again.
+- yungle-cli 0.1.2: `yungle mcp install` adds the MCP server to Claude Desktop, Claude Code, Cursor or Windsurf.
+- yungle-mcp 0.1.0, first release: ten read tools and `create_transfer`, which prepares a draft to finish in the browser and emails nobody. Version 0.1.2 is listed in the official MCP registry as `co.yungle/yungle`.
+- yungle-client 0.1.0, first release: the typed SDK the CLI and MCP server are built on. Version 0.1.1 ships type declarations that resolve under `moduleResolution: node16` and `nodenext`.
+
+</Update>
+
+<Update label="2026-07-29" description="v1" tags={["API","Uploads"]}>
 
 First release.
 

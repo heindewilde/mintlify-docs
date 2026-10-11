@@ -23,4 +23,4 @@ jobs:
       - name: Validate (strict build, OpenAPI included)
         run: mint validate
       - name: Broken links
-        run: mint broken-links --check-anchors
+        run: node scripts/links.mjs

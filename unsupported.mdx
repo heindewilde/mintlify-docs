@@ -1,44 +1,60 @@
 ---
 title: "What the API cannot do"
 sidebarTitle: "What it cannot do"
-description: "The limits of the Yungle API, separating deliberate omissions from what is genuinely impossible — including why the vault can never be reachable."
+description: "The limits of the Yungle API: what can never be reachable, what is left out on purpose, and the gaps you may need to design around."
 ---
 
-Worth knowing before you design around it. Some of this is a decision we could revisit; some of it is not possible at all, and the difference matters.
+Read this before you design an integration around the API. Some of these limits follow from how encryption works and will never change. Others are decisions, and a few are gaps that may close later.
 
-## Not possible: the vault
+## Never possible
 
-Your vault is encrypted with a master key derived in your browser from a passphrase that never reaches our servers. There is no server-side path to that plaintext — not for the API, not for previews, not for us.
+### The vault
 
-So a vault collection is not merely hidden from the API; it returns `404` like any resource that is not yours, and always will. An API that could read your vault would mean the vault did not work.
+The vault is encrypted with a key derived in your browser from a passphrase that never reaches Yungle. No server-side path leads to its contents: not the API, not previews, not Yungle staff.
 
-<Note>
-A local client *can* reach it, because a local client is where the key can be derived. Vault support in the Yungle CLI is not built yet.
-</Note>
+So the API treats the vault as if it did not exist. Asking for it by id returns `404 not_found`, the same as any resource that is not yours. An API that could read the vault would mean the vault did not work.
 
-## Not possible: end-to-end encrypted transfers
+### Reading end-to-end encrypted transfers
 
-Same reason. An E2E transfer's key lives in the fragment of its share link and is never sent to us, so we hold ciphertext we cannot open. You can create one in the browser; the API cannot create one, and refuses to finalize one — sending it by email would mean emailing the key, which is the one thing the feature exists to prevent.
+An end-to-end encrypted transfer is encrypted on the sender's device, and its key travels only in the `#` part of the link. Yungle holds ciphertext it cannot open. As a result:
 
-## Deliberate: billing, plans and members
+- Yungle cannot email such a transfer, protect it with a password, or store a title for it. Finalizing one with `recipients`, `password`, `title` or a plain `message` returns `400 invalid_request`.
+- Download links for your own end-to-end encrypted transfer return `409 e2ee_unsupported`. Open the full link, `#` part included, in a browser.
+- Yungle cannot fetch files from URLs into one, because it would see them.
 
-There are no endpoints for subscriptions, payment methods, invoices, add-ons, workspace members or account deletion, and no scope that could grant them.
+You can still create one through the API with `"e2ee": true`, if your client encrypts each file before uploading it. The [`yungle-e2e`](https://www.npmjs.com/package/yungle-e2e) package does that encryption.
 
-Those act on a **person's own account** rather than on a workspace, which is the boundary the whole product is built around: a member managing someone else's collections must never thereby be able to touch their card. A machine credential sits on the same side of that line.
+## Left out on purpose
 
-## Deliberate: sharing settings
+### Billing, plans, members and keys
 
-A collection's visibility, password and readable alias are not writable through the API. Each of them is a decision about who can reach a client's photographs, and the dashboard is where the consequence is written next to the control. Creating and filling collections is automation; deciding who gets in is not.
+There are no endpoints, and no scopes, for subscriptions, payment methods, invoices, credit, workspace members, API keys or deleting an account. These act on a person's own account rather than on the workspace's files, and a machine credential stays out of them. Use the dashboard.
 
-## Not yet: browser-side use
+### Who can reach a collection
 
-The API is server-to-server. There are no CORS headers for third-party origins and keys must not be shipped to a browser — a key acts as your whole workspace, and anything in front-end code is public.
+You cannot change a collection's visibility, password or readable custom link through the API. Each one decides who can see a client's files, and the dashboard shows the consequence next to the control. Creating collections and filling them is automation; deciding who gets in is not.
 
-If you need a browser to upload, do it the way our own app does: your server registers the files and hands the browser the short-lived, single-file upload tokens.
+### Use from a browser
 
-## Other gaps
+The API is server-to-server. It sends no CORS headers, and the upload endpoint accepts browser uploads only from yungle.co. Never ship an API key to a browser or a mobile app: a key acts as your whole workspace, and anything in front-end code is public.
 
-- Pagination covers the two lists that grow without bound, transfers and collection files. Download receipts are capped at the 200 most recent events; contacts, collections, folders and guests always come back complete.
-- No bulk contact import — create them one at a time; the rate limit is generous.
-- No search. Fetch and filter client-side.
-- No sandbox or test mode. Keys are named yk_live_ so there is room for one later.
+## Not available today
+
+- **Moving or renaming.** Files and folders in a collection cannot be renamed or moved, and folders cannot be deleted. You can delete files.
+- **Changing a sent transfer's files.** Once a transfer is sent, you cannot add or remove files. Send a new transfer instead.
+- **Deleting an upload request.** You can pause or close one; closing is final.
+- **Bulk contact import.** Create contacts one request at a time.
+- **Search and filtering.** Lists come back whole or paged. Filter in your own code.
+- **Paging the shorter lists.** Only transfers, collection files and webhook events are paged. Contacts, collections, folders, guests and upload requests come back complete. Download receipts return the 200 most recent events. See [Pagination](/pagination-and-idempotency).
+- **A sandbox or test mode.** Every key works on your real workspace. Keys start with `yk_live_` so a test mode can be told apart later.
+
+## Next steps
+
+<Columns cols={2}>
+  <Card title="Concepts" icon="book-open" href="/concepts">
+    What is always encrypted, and what is end-to-end encrypted.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Scopes and what the free plan reaches.
+  </Card>
+</Columns>

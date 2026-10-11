@@ -6,7 +6,7 @@ Source of [docs.yungle.co](https://docs.yungle.co), built with [Mintlify](https:
 npm i -g mint
 mint dev                          # preview at http://localhost:3000
 node scripts/copy-guard.mjs       # what the docs may never claim
-mint validate && mint broken-links --check-anchors
+mint validate && node scripts/links.mjs
 ```
 
 `snippets/generated/` is rendered from the Yungle app's code and must not be edited by hand. See
