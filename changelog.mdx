@@ -35,6 +35,19 @@ A version as a whole is retired the same way, with the same six months at least,
 
 ## Changes
 
+<Update label="2026-10-12" tags={["API","MCP","CLI","JS SDK","Extension"]}>
+
+- A transfer finalized again with new `recipients` now emails them. Before, only the first send emailed anyone, so people added by a later finalize got nothing. A transfer's `recipients` now lists everyone added across calls. Before, it showed only the latest call's addresses, and was emptied by a finalize without any.
+- `429 email_budget_exhausted` from finalize now says that nothing was sent. The old message said the transfer was live, but a draft stays a draft and its link does not work yet. Finalize again without `recipients` to get the link now.
+- `PATCH /requests/{id}` refuses to set a closed upload request back to `active` or `paused`, and answers `400 invalid_request`. Closing was always meant to be final, but the API accepted it.
+- The OpenAPI document now describes `title` on download links correctly: your own transfer's links carry its title, and only a transfer link someone shared with you returns `null`. Nothing on the wire changed.
+- yungle-cli 0.3.1: uploads send one part per request instead of the whole file in one, so a large file on a slow connection is no longer cut off by the 30-minute limit on a single request.
+- yungle-client 0.3.2: a dropped connection is retried for `GET`, `DELETE` and `POST`, with the same `Idempotency-Key`. Before, the network error was thrown straight away. An abort you asked for is never retried.
+- yungle-mcp 0.3.1, and the hosted server at `/mcp`: `create_transfer` is listed only for a credential with `transfers:write`. A read-only key used to see it, and every call failed.
+- yungle-mcp 0.3.2 and browser extension 0.1.5 build on yungle-client 0.3.2. Help and docs links in the CLI, the MCP server and the SDK point to docs.yungle.co.
+
+</Update>
+
 <Update label="2026-10-11" tags={["Uploads","API","Extension"]}>
 
 - A zero-byte file now completes as soon as its tus upload is created. Before, it stayed `uploading` forever, and its transfer's "ready" email never went out.
