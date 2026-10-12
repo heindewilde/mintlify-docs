@@ -191,7 +191,7 @@ Both clients retry for you, up to `maxRetries` / `max_retries` times:
 
 - **`429`** is always retried, because a throttled request did nothing.
 - **`5xx`** is retried for `GET`, `DELETE` and `POST`. Every `POST` carries an `Idempotency-Key` that stays the same across its retries, so a retried create returns the first result instead of making a second one. `PATCH` is not retried.
-- **A dropped connection** is retried by the Python client, under the same rules as a `5xx`. The JavaScript client throws the `fetch` error instead.
+- **A dropped connection** is retried under the same rules as a `5xx`. In JavaScript, an abort you asked for (an `AbortSignal` or a timeout) is never retried. Before `yungle-client` 0.3.2, the JavaScript client threw the `fetch` error instead.
 - The wait honors `Retry-After` when the server sends one, and otherwise backs off exponentially with jitter.
 
 Set the retry count to `0` to handle retries yourself.

@@ -104,7 +104,7 @@ When the last byte lands, the file is ready and queued for a virus scan. There i
     Three rules follow from committing in parts:
 
     - **A request smaller than one part never advances the offset.** The server answers with the previous boundary, and a client that resends forever never finishes. Send at least one full part per request, except for the last, shorter piece of the file.
-    - **Keep each request short.** Since 2026-10-11 the web app sends exactly one part per `PATCH`, and so should you. A single request carrying a whole large file can be cut off by a proxy deadline (30 minutes per request), and each resume would hit the same wall. The SDKs send 64 MiB per request, two parts.
+    - **Keep each request short.** Since 2026-10-11 the web app sends exactly one part per `PATCH`, and so should you. A single request carrying a whole large file can be cut off by a proxy deadline (30 minutes per request), and each resume would hit the same wall. The SDKs and the CLI send 64 MiB per request, two parts.
     - **Send `x-yungle-upload-token` on every request**: `POST`, `HEAD`, `PATCH` and `DELETE`. tus metadata reaches the server only on the first `POST`. A request without a valid token is refused with `403`.
   </Step>
 

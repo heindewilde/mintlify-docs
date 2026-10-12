@@ -47,7 +47,7 @@ The SDKs raise this as an exception: `YungleApiError` in JavaScript and `YungleE
 | `409` | Conflict | Usually safe to skip, such as a contact that already exists. With `details.reason`, it is about your `Idempotency-Key`. |
 | `410` | Gone | The transfer is sent, revoked or expired, or a shared link is no longer available. Do not retry. |
 | `413` | Too large | Storage is full or the transfer exceeds the plan's ceiling. `details` has the numbers. |
-| `429` | Slow down | Wait for `Retry-After`, then retry. `email_budget_exhausted` is different: the transfer is live, so share its link yourself. |
+| `429` | Slow down | Wait for `Retry-After`, then retry. `email_budget_exhausted` is different: nothing was sent and nothing changed. For a transfer, finalize again without `recipients` to get the link now, or retry tomorrow. |
 | `500` | Our fault | Retry with backoff. If it persists, quote `details.requestId` when you get in touch. |
 
 ### Not found is never forbidden

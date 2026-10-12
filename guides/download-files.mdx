@@ -94,6 +94,7 @@ Downloads work like uploads: bytes never come through the JSON API. You ask for 
     }
     ```
 
+    - `title` is the collection's title, or your own transfer's title. It is `null` when you resolve a transfer link someone shared with you, because a transfer's title is never shown to recipients.
     - `zipUrl` downloads everything as one zip, with folders kept. It is `null` when there is only one file, or while a transfer is still uploading.
     - `path` is the file's folder. In a collection it is `""` for a file at the top level.
     - `crc32` is the file's checksum as 8 hex digits, for checking a download. It can be `null`.

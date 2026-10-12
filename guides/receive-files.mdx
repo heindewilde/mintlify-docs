@@ -191,7 +191,7 @@ An [upload request](/concepts#upload-request) is a public page where anyone with
     `PATCH` the request with a `status`:
 
     - `paused` stops new uploads. Set it back to `active` to reopen the link.
-    - `closed` stops uploads for good. Use it when the request is finished.
+    - `closed` stops uploads for good. Use it when the request is finished. A closed request cannot be set back to `active` or `paused`: that returns `400` [`invalid_request`](/errors#invalid_request). Create a new request instead.
 
     Files already received stay in the collection either way. Someone who opens the link sees that the request is paused or closed.
 
