@@ -8,8 +8,8 @@
  * - The default product is per-file envelope encryption with server-held keys,
  *   which is what makes previews and virus scanning possible. Calling it
  *   "end-to-end" is wrong. Opt-in E2E transfers and the vault may be discussed.
- * - There is no SLA: one server, no failover. No uptime figure, ever, and the
- *   overview must keep saying so plainly.
+ * - There is no SLA: one server, no failover. No uptime figure, ever. (The
+ *   overview's "no SLA" disclaimer was removed by decision, 2026-10-13.)
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -24,7 +24,7 @@ const FORBIDDEN = [
   [/\bmilitary[- ]grade\b/i, 'meaningless phrase; name the algorithm'],
 ];
 
-const REQUIRED = [['index.mdx', /no SLA and no uptime\s+guarantee/i, 'the overview must state plainly that there is no SLA']];
+const REQUIRED = [];
 
 function mdxFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
