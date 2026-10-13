@@ -22,8 +22,8 @@ and opens a pull request here with page edits and a changelog entry; a human mer
 - **Never call the default product end-to-end encrypted or zero-knowledge.** It is per-file envelope
   encryption with keys Yungle holds, which is what makes previews and virus scanning possible. Say
   "always encrypted". Opt-in end-to-end transfers and the vault may be called end-to-end.
-- **There is no SLA.** One server, no failover. Never publish an uptime figure or a target, and keep the
-  overview's "no SLA and no uptime guarantee" sentence as it is.
+- **No uptime figure, no target, no SLA claim.** One server, no failover. The "no SLA" disclaimer was
+  removed on purpose (2026-10-13, YUN-8): don't add it back, and don't promise uptime either.
 - **Unbuilt features are written in the future tense.**
 - **The MCP server never deletes, revokes or invites**, and emails someone only when the user allowed
   it and confirms each send. Nothing here may suggest otherwise.

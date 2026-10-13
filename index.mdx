@@ -61,23 +61,9 @@ You authenticate with an API key sent as a bearer token. [Authentication](/authe
 
 The CLI, the MCP server and the JavaScript and Python SDKs are open source (MIT) on [GitHub](https://github.com/heindewilde/yungle-clients).
 
-{/*
-  Reliability, stated plainly rather than flatteringly.
+## What you get
 
-  Yungle runs on a single VM with no failover, and has had outages (a full disk
-  once took Postgres down for 20 minutes). A developer deciding whether to build
-  on this deserves to know that before they do, not after.
-
-  Do NOT soften this into an uptime figure or a target. Publishing a number we
-  have no redundancy to defend is how "best effort" quietly becomes an
-  expectation, and the first outage then costs trust rather than an hour.
-*/}
-
-## What we promise, and what we don't
-
-Yungle is small and self-hosted in the EU. There is **no SLA and no uptime guarantee**: it runs on a single server with no failover, so a hardware fault or a bad deploy means downtime. It has happened, and it will happen again.
-
-What you do get: your files are always encrypted, nothing is sent to a US cloud, and every byte is served from the EU under a data processing agreement. If your integration needs a contractual uptime guarantee, Yungle is not the right choice today, and it is better that you find that out here than during an incident.
+Yungle is small, independent and self-hosted in the EU. Your files are always encrypted, nothing is sent to a US cloud, and every byte is served from the EU under a data processing agreement.
 
 Free usage is free: {apiFreeUsage} of API uploads each month, {apiFreeCalls} calls, and {freeTransfer} per transfer, with no card and no trial clock. Beyond the upload allowance, you pay {apiPricePerGb} per GB from credit you top up in advance.
 
