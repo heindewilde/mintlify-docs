@@ -429,7 +429,20 @@
           },
           "createdAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "When the download started."
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the last byte was sent. Null while in progress, or if the download stopped partway."
           }
         },
         "required": [
@@ -438,7 +451,8 @@
           "recipientEmail",
           "sessionId",
           "ipTruncated",
-          "createdAt"
+          "createdAt",
+          "completedAt"
         ]
       },
       "CollectionSummary": {
@@ -1725,7 +1739,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getMe"
+        "operationId": "getMe",
+        "x-mint": {
+          "metadata": {
+            "description": "Check which workspace, plan and scopes an API key belongs to before you send anything. One call, no parameters."
+          }
+        }
       }
     },
     "/me/referral": {
@@ -1773,7 +1792,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getReferral"
+        "operationId": "getReferral",
+        "x-mint": {
+          "metadata": {
+            "description": "Read the invite link and code of the key’s owner, and how many free months their referrals have earned so far."
+          }
+        }
       }
     },
     "/transfers": {
@@ -1861,7 +1885,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listTransfers"
+        "operationId": "listTransfers",
+        "x-mint": {
+          "metadata": {
+            "description": "List the transfers in your workspace, newest first, with status, size and expiry. Cursor-paged, up to 500 per page."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -2044,7 +2073,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createTransfer"
+        "operationId": "createTransfer",
+        "x-mint": {
+          "metadata": {
+            "description": "Create a draft transfer and get a tus upload endpoint with one token per file. Nothing is live until you finalize it."
+          }
+        }
       }
     },
     "/transfers/{id}": {
@@ -2124,7 +2158,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getTransfer"
+        "operationId": "getTransfer",
+        "x-mint": {
+          "metadata": {
+            "description": "Get one transfer: its files, recipients, who has downloaded, the link, and when it expires."
+          }
+        }
       },
       "patch": {
         "tags": [
@@ -2215,7 +2254,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "updateTransfer"
+        "operationId": "updateTransfer",
+        "x-mint": {
+          "metadata": {
+            "description": "Change a transfer’s expiry or download limit after it was sent, without changing its link."
+          }
+        }
       },
       "delete": {
         "tags": [
@@ -2269,7 +2313,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "revokeTransfer"
+        "operationId": "revokeTransfer",
+        "x-mint": {
+          "metadata": {
+            "description": "Revoke a transfer: the link stops working at once and its files are deleted. Cannot be undone."
+          }
+        }
       }
     },
     "/transfers/{id}/finalize": {
@@ -2395,7 +2444,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "finalizeTransfer"
+        "operationId": "finalizeTransfer",
+        "x-mint": {
+          "metadata": {
+            "description": "Make a draft transfer live: the link starts working and recipients are emailed once every file has uploaded."
+          }
+        }
       }
     },
     "/transfers/{id}/files": {
@@ -2574,7 +2628,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "addTransferFiles"
+        "operationId": "addTransferFiles",
+        "x-mint": {
+          "metadata": {
+            "description": "Add more files to a draft transfer before it is sent, and get an upload token for each new file."
+          }
+        }
       }
     },
     "/transfers/{id}/files/{fileId}": {
@@ -2653,7 +2712,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "removeTransferFile"
+        "operationId": "removeTransferFile",
+        "x-mint": {
+          "metadata": {
+            "description": "Remove one file from a draft transfer before it is sent. Its upload is cancelled and its bytes deleted."
+          }
+        }
       }
     },
     "/transfers/{id}/files/{fileId}/sealed": {
@@ -2681,7 +2745,7 @@
         "tags": [
           "Transfers"
         ],
-        "summary": "Store an encrypted file’s sealed name and thumbnail",
+        "summary": "Store the sealed name and thumbnail of an encrypted file",
         "description": "End-to-end encrypted transfers only. Sealed with `yungle-e2e` after the file is created, because each blob binds the file’s id. Yungle stores the ciphertext and learns nothing from it.",
         "requestBody": {
           "required": true,
@@ -2762,7 +2826,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "sealTransferFile"
+        "operationId": "sealTransferFile",
+        "x-mint": {
+          "metadata": {
+            "description": "Store the encrypted name and thumbnail of a file in an end-to-end encrypted transfer. The server never sees either."
+          }
+        }
       }
     },
     "/transfers/{id}/downloads": {
@@ -2844,7 +2913,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listTransferDownloads"
+        "operationId": "listTransferDownloads",
+        "x-mint": {
+          "metadata": {
+            "description": "See who downloaded a transfer and when, per file and per recipient, including downloads that did not finish."
+          }
+        }
       }
     },
     "/transfers/{id}/download-links": {
@@ -2910,7 +2984,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getTransferDownloadLinks"
+        "operationId": "getTransferDownloadLinks",
+        "x-mint": {
+          "metadata": {
+            "description": "Get short-lived direct download URLs for every file in your own transfer, for scripts and agents."
+          }
+        }
       }
     },
     "/requests": {
@@ -2969,7 +3048,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listRequests"
+        "operationId": "listRequests",
+        "x-mint": {
+          "metadata": {
+            "description": "List your upload requests: links that let other people send files to you, with how many have arrived."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -3085,7 +3169,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createRequest"
+        "operationId": "createRequest",
+        "x-mint": {
+          "metadata": {
+            "description": "Create an upload request: a link anyone can use to send files into one of your collections, no account needed."
+          }
+        }
       }
     },
     "/requests/{id}": {
@@ -3159,7 +3248,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getRequest"
+        "operationId": "getRequest",
+        "x-mint": {
+          "metadata": {
+            "description": "Get one upload request and every submission to it: who sent what, and when."
+          }
+        }
       },
       "patch": {
         "tags": [
@@ -3241,7 +3335,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "updateRequest"
+        "operationId": "updateRequest",
+        "x-mint": {
+          "metadata": {
+            "description": "Pause, resume or close an upload request, or change its title, message and limits."
+          }
+        }
       }
     },
     "/imports/{fileId}": {
@@ -3301,7 +3400,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getImport"
+        "operationId": "getImport",
+        "x-mint": {
+          "metadata": {
+            "description": "Follow a URL import: whether Yungle has fetched the file from the web yet, how far it got, and why it failed."
+          }
+        }
       }
     },
     "/links/resolve": {
@@ -3386,7 +3490,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "resolveLink"
+        "operationId": "resolveLink",
+        "x-mint": {
+          "metadata": {
+            "description": "Turn a Yungle link someone shared with you into direct download URLs for its files, from a script or agent."
+          }
+        }
       }
     },
     "/collections": {
@@ -3445,7 +3554,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listCollections"
+        "operationId": "listCollections",
+        "x-mint": {
+          "metadata": {
+            "description": "List the collections in your workspace with their size, file count and how they are shared."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -3530,7 +3644,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createCollection"
+        "operationId": "createCollection",
+        "x-mint": {
+          "metadata": {
+            "description": "Create a collection: a lasting, folder-structured space for files that you can share with clients."
+          }
+        }
       }
     },
     "/collections/{id}": {
@@ -3596,7 +3715,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getCollection"
+        "operationId": "getCollection",
+        "x-mint": {
+          "metadata": {
+            "description": "Get one collection: its title, sharing settings, size and the link guests use to open it."
+          }
+        }
       },
       "patch": {
         "tags": [
@@ -3676,7 +3800,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "updateCollection"
+        "operationId": "updateCollection",
+        "x-mint": {
+          "metadata": {
+            "description": "Rename a collection or change how it is shared, its description and its expiry."
+          }
+        }
       },
       "delete": {
         "tags": [
@@ -3730,7 +3859,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "deleteCollection"
+        "operationId": "deleteCollection",
+        "x-mint": {
+          "metadata": {
+            "description": "Delete a collection and everything in it. Its files are removed and its link stops working."
+          }
+        }
       }
     },
     "/collections/{id}/download-links": {
@@ -3793,7 +3927,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getCollectionDownloadLinks"
+        "operationId": "getCollectionDownloadLinks",
+        "x-mint": {
+          "metadata": {
+            "description": "Get short-lived direct download URLs for the files in a collection you own or were invited to."
+          }
+        }
       }
     },
     "/collections/{id}/files": {
@@ -3901,7 +4040,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listCollectionFiles"
+        "operationId": "listCollectionFiles",
+        "x-mint": {
+          "metadata": {
+            "description": "List the files in a collection or one of its folders, with size, type and scan status. Cursor-paged."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -4078,7 +4222,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "addCollectionFiles"
+        "operationId": "addCollectionFiles",
+        "x-mint": {
+          "metadata": {
+            "description": "Add files to a collection, keeping their folder paths, and get a tus upload token for each one."
+          }
+        }
       },
       "delete": {
         "tags": [
@@ -4162,7 +4311,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "deleteCollectionFiles"
+        "operationId": "deleteCollectionFiles",
+        "x-mint": {
+          "metadata": {
+            "description": "Delete one or more files from a collection by id. Storage is freed as soon as they are gone."
+          }
+        }
       }
     },
     "/collections/{id}/folders": {
@@ -4232,7 +4386,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listCollectionFolders"
+        "operationId": "listCollectionFolders",
+        "x-mint": {
+          "metadata": {
+            "description": "List the folders in a collection, with their paths, so you can place uploads and build links."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -4326,7 +4485,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createCollectionFolder"
+        "operationId": "createCollectionFolder",
+        "x-mint": {
+          "metadata": {
+            "description": "Create a folder in a collection, nested under another folder or at the top level."
+          }
+        }
       }
     },
     "/collections/{id}/guests": {
@@ -4395,7 +4559,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listCollectionGuests"
+        "operationId": "listCollectionGuests",
+        "x-mint": {
+          "metadata": {
+            "description": "List the people invited to a collection and when each of them last opened it."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -4486,7 +4655,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "inviteCollectionGuests"
+        "operationId": "inviteCollectionGuests",
+        "x-mint": {
+          "metadata": {
+            "description": "Invite people to a collection by email. Each gets their own access, which you can remove later."
+          }
+        }
       }
     },
     "/collections/{id}/guests/{guestId}": {
@@ -4562,7 +4736,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "removeCollectionGuest"
+        "operationId": "removeCollectionGuest",
+        "x-mint": {
+          "metadata": {
+            "description": "Remove a guest from a collection. Their access ends immediately; nothing else changes."
+          }
+        }
       }
     },
     "/webhooks": {
@@ -4620,7 +4799,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listWebhooks"
+        "operationId": "listWebhooks",
+        "x-mint": {
+          "metadata": {
+            "description": "List your webhook endpoints, the events each one receives, and whether it is active or paused."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -4737,7 +4921,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createWebhook"
+        "operationId": "createWebhook",
+        "x-mint": {
+          "metadata": {
+            "description": "Add a webhook endpoint and choose its events. Every delivery is signed so you can verify it came from Yungle."
+          }
+        }
       }
     },
     "/webhooks/{id}": {
@@ -4803,7 +4992,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getWebhook"
+        "operationId": "getWebhook",
+        "x-mint": {
+          "metadata": {
+            "description": "Get one webhook endpoint: its URL, the events it receives and its recent delivery health."
+          }
+        }
       },
       "patch": {
         "tags": [
@@ -4916,7 +5110,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "updateWebhook"
+        "operationId": "updateWebhook",
+        "x-mint": {
+          "metadata": {
+            "description": "Change a webhook endpoint’s URL or events, or pause and resume deliveries to it."
+          }
+        }
       },
       "delete": {
         "tags": [
@@ -4970,7 +5169,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "deleteWebhook"
+        "operationId": "deleteWebhook",
+        "x-mint": {
+          "metadata": {
+            "description": "Delete a webhook endpoint. Nothing more is sent to it; events already delivered are unaffected."
+          }
+        }
       }
     },
     "/webhooks/{id}/rotate-secret": {
@@ -5040,7 +5244,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "rotateWebhookSecret"
+        "operationId": "rotateWebhookSecret",
+        "x-mint": {
+          "metadata": {
+            "description": "Replace a webhook endpoint’s signing secret. The old secret stops verifying new deliveries at once."
+          }
+        }
       }
     },
     "/webhooks/{id}/test": {
@@ -5109,7 +5318,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "testWebhook"
+        "operationId": "testWebhook",
+        "x-mint": {
+          "metadata": {
+            "description": "Send a test event to a webhook endpoint to check that your server receives it and verifies the signature."
+          }
+        }
       }
     },
     "/webhooks/{id}/deliveries": {
@@ -5178,7 +5392,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listWebhookDeliveries"
+        "operationId": "listWebhookDeliveries",
+        "x-mint": {
+          "metadata": {
+            "description": "See recent delivery attempts to a webhook endpoint: status codes, timing and errors, newest first."
+          }
+        }
       }
     },
     "/webhooks/{id}/deliveries/{deliveryId}/retry": {
@@ -5257,7 +5476,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "retryWebhookDelivery"
+        "operationId": "retryWebhookDelivery",
+        "x-mint": {
+          "metadata": {
+            "description": "Send a failed webhook delivery again, with the same event and a fresh signature."
+          }
+        }
       }
     },
     "/webhooks/{id}/events": {
@@ -5361,7 +5585,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listWebhookEvents"
+        "operationId": "listWebhookEvents",
+        "x-mint": {
+          "metadata": {
+            "description": "Pull the events for an endpoint yourself, for scripts that cannot receive webhooks on a public URL."
+          }
+        }
       }
     },
     "/contacts": {
@@ -5419,7 +5648,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "listContacts"
+        "operationId": "listContacts",
+        "x-mint": {
+          "metadata": {
+            "description": "List the contacts in your workspace: the people you send to, with names and email addresses."
+          }
+        }
       },
       "post": {
         "tags": [
@@ -5530,7 +5764,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "createContact"
+        "operationId": "createContact",
+        "x-mint": {
+          "metadata": {
+            "description": "Add a contact to your workspace so you can send transfers and invites to them by name."
+          }
+        }
       }
     },
     "/contacts/{id}": {
@@ -5596,7 +5835,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "getContact"
+        "operationId": "getContact",
+        "x-mint": {
+          "metadata": {
+            "description": "Get one contact from your workspace by id: their name, email address and when they were added."
+          }
+        }
       },
       "patch": {
         "tags": [
@@ -5708,7 +5952,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "replaceContact"
+        "operationId": "replaceContact",
+        "x-mint": {
+          "metadata": {
+            "description": "Update a contact’s name or email address. The whole contact is replaced with what you send."
+          }
+        }
       },
       "delete": {
         "tags": [
@@ -5763,7 +6012,12 @@
             "$ref": "#/components/responses/InternalError"
           }
         },
-        "operationId": "deleteContact"
+        "operationId": "deleteContact",
+        "x-mint": {
+          "metadata": {
+            "description": "Delete a contact from your workspace. Transfers already sent to them are not affected."
+          }
+        }
       }
     }
   }
