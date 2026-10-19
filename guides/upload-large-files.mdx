@@ -121,6 +121,11 @@ When the last byte lands, the file is ready and queued for a virus scan. There i
     ```
 
     This works from a different process or machine, as long as you have the upload URL and a valid token. Retry `5xx`, `409`, `423`, `429` and network errors after a short wait; treat other `4xx` answers as final.
+
+    Two answers mean "wait longer", not "give up":
+
+    - `423`: the previous `PATCH` on this file is still being processed. `HEAD` again after a few seconds.
+    - `503` with the body `storage_unavailable`: Yungle's object storage is failing, and the server already retried for about a minute. Parts already committed are kept. Keep retrying every 30 seconds or so, for several minutes.
   </Step>
 
   <Step title="Renew the token on long uploads">

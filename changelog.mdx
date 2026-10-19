@@ -35,6 +35,20 @@ A version as a whole is retired the same way, with the same six months at least,
 
 ## Changes
 
+<Update label="2026-10-19" tags={["API","Uploads"]}>
+
+- **A download counts as downloaded once the last byte goes out**, not when it starts. `GET /transfers/{id}/downloads` gains `completedAt` on each event, `null` while it runs or if it stopped partway. `transfer.downloaded`, `downloadCount` and a recipient's `downloaded` follow it. A started download still counts against `maxDownloads`. Before, a zip that broke halfway counted, and emailed the sender, once per attempt.
+- A `HEAD` request on a download URL is answered with headers only. It no longer counts as a download, uses up `maxDownloads`, or sends `transfer.downloaded`.
+- Single-file downloads send a strong `ETag` and `Last-Modified`, and honour `If-Range`, so an interrupted download resumes instead of starting over. Download responses are no longer compressed, which had made the `ETag` of text files weak.
+- A zip that storage cannot serve right now returns `503` with `Retry-After`. Before, it left the file out and sent a smaller zip that looked complete. A zip now leaves a file out only when it is gone for good.
+- A new account starts with a 14-day Leaf trial, with no card. During it, the API answers as on Leaf: collections, upload requests, every webhook event and the paid rate limits. When it ends without a plan, the paid endpoints answer `402 upgrade_required`.
+- In a sent transfer, a file whose upload makes no progress for 6 hours is dropped, and the recipients are emailed the files that did arrive. Before, one stuck file held the email back until the transfer expired. In a collection, an upload with no progress for 7 days is removed.
+- An unsent draft is no longer deleted at 24 hours while one of its uploads is still making progress. Before, a very large upload on a slow line lost its first day of work.
+- tus uploads: when object storage fails for longer than the server's own one-minute retry, a `PATCH` returns `503` with the body `storage_unavailable` instead of `500`. A resume that arrives while the previous `PATCH` still holds the file returns `423` instead of `500`. Retry both. See [uploading large files](/guides/upload-large-files).
+- A webhook delivery whose retry was never scheduled is queued again once it is 10 minutes overdue. Before, it could stay pending for good.
+
+</Update>
+
 <Update label="2026-10-12" tags={["API","MCP","CLI","JS SDK","Extension"]}>
 
 - A transfer finalized again with new `recipients` now emails them. Before, only the first send emailed anyone, so people added by a later finalize got nothing. A transfer's `recipients` now lists everyone added across calls. Before, it showed only the latest call's addresses, and was emptied by a finalize without any.
