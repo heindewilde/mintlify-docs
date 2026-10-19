@@ -111,6 +111,10 @@ Downloads work like uploads: bytes never come through the JSON API. You ask for 
 
     The URLs work for 24 hours (`urlsExpireAt`). A download already running is not cut off when they expire, but resuming it afterwards needs fresh URLs, so call step 1 again.
 
+    To resume a download that stopped, send `Range: bytes=<bytes you have>-`. A single file carries an `ETag` and a `Last-Modified` header; send the `ETag` back as `If-Range` and you get the rest of the same file, or the whole file again if it changed. A zip carries an `ETag` too.
+
+    A zip that cannot be built right now, because storage did not answer, returns `503` with a `Retry-After` header. Wait that many seconds and ask again. A zip never leaves a file out because of a passing error. It leaves one out only when that file is gone for good.
+
     The Python SDK can save a whole set of links in one call. It keeps folders, resumes partial files, skips files already complete, and checks each checksum:
 
     ```python
@@ -123,6 +127,8 @@ Downloads work like uploads: bytes never come through the JSON API. You ask for 
 
     - **Your own files** (`/transfers/{id}/download-links`, `/collections/{id}/download-links`) are not a recipient download. They never appear in download receipts or `transfer.downloaded` webhooks, and never use up a download limit.
     - **A shared link** (`/links/resolve`) is treated exactly like a person opening it in a browser. Each call is one download of a transfer: it appears in the sender's receipts and counts against their `maxDownloads`.
+
+    A download counts against `maxDownloads` as soon as it starts, so retrying cannot get around a limit. It counts as **downloaded** (in receipts, `downloadCount` and the `transfer.downloaded` webhook) only once the last byte has gone out. A `HEAD` request is never a download.
   </Step>
 
   <Step title="Handle the refusals">
@@ -148,7 +154,7 @@ Every file is scanned for malware after it uploads. A file whose scan is still p
 
 ## Track who downloaded your transfer
 
-For a transfer you sent, `GET /transfers/{id}/downloads` returns each download event and, per recipient, whether they downloaded. Recipients you emailed get a personal link, so their downloads carry their address; downloads through a link you shared yourself have `recipientEmail: null`. One visit is one download, however many files it took. [Send a transfer](/guides/send-a-transfer) walks through reading the receipts.
+For a transfer you sent, `GET /transfers/{id}/downloads` returns each download event and, per recipient, whether they downloaded. Recipients you emailed get a personal link, so their downloads carry their address; downloads through a link you shared yourself have `recipientEmail: null`. One visit is one download, however many files it took. Each event has `createdAt`, when the download started, and `completedAt`, when the last byte went out. `completedAt` is `null` while the download runs, and stays `null` if it stopped partway. [Send a transfer](/guides/send-a-transfer) walks through reading the receipts.
 
 To be told the moment a download happens instead of polling, subscribe to `transfer.downloaded` with a [webhook](/guides/webhooks).
 

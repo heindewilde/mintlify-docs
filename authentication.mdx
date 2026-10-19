@@ -63,7 +63,9 @@ Every account can use the API. What the free plan reaches:
 | Every other collection endpoint, reads included | No, `402 upgrade_required` | Yes |
 | Creating, pausing and closing upload requests | No, `402 upgrade_required` | Yes |
 
-The plan is checked live on every request. If a subscription lapses, the paid endpoints answer `402` from the next request and work again once it is renewed. Nothing needs re-issuing.
+A new account starts with a 14-day Leaf trial, with no card, once per email inbox. During the trial the API answers as on Leaf. When it ends without a plan, the workspace is on the free plan.
+
+The plan is checked live on every request. If a subscription or a trial lapses, the paid endpoints answer `402` from the next request and work again once it is renewed. Nothing needs re-issuing.
 
 A free workspace cannot create a key with `collections:write`; the dashboard refuses it at creation.
 
