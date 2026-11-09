@@ -16,8 +16,8 @@ A webhook tells your server when something happens in your workspace, so you sto
 
 | Type | Sent when | Plan |
 | --- | --- | --- |
-| `transfer.ready` | A transfer was sent and every file finished uploading. The link works. | Any |
-| `transfer.downloaded` | Someone downloaded a transfer. One event per visit, however many files they saved. | Any |
+| `transfer.ready` | A transfer was sent and every file finished uploading, or a file that stopped uploading was dropped. The link works. | Any |
+| `transfer.downloaded` | Someone finished downloading a transfer: sent when the last byte went out, not when the download started. One event per visit, however many files they saved. | Any |
 | `transfer.expiring` | A sent transfer expires within 24 hours. | Any |
 | `transfer.expired` | A transfer expired or was revoked, and its files are gone. | Any |
 | `collection.file_uploaded` | A file finished uploading into a collection: from the dashboard, the API, a URL import or an upload request. | Leaf, Tree |
@@ -266,7 +266,7 @@ When a transfer expires or is revoked, Yungle deletes its earlier `transfer.read
 
 ## Retries and ordering
 
-- **Retries.** A failed delivery is retried after 1, 5 and 30 minutes, then after 2, 6, 12 and 24 hours: eight attempts over about 45 hours.
+- **Retries.** A failed delivery is retried after 1, 5 and 30 minutes, then after 2, 6, 12 and 24 hours: eight attempts over about 45 hours. If a retry is more than 10 minutes overdue, Yungle queues it again.
 - **Pausing.** When five deliveries in a row use up all their retries, Yungle pauses the endpoint and emails the workspace owner once. Turn it back on with `PATCH /webhooks/{id}` and `{"enabled": true}`, or in the dashboard. You can also pause an endpoint yourself with `{"enabled": false}`.
 - **At least once.** The same event can arrive more than once. Deduplicate on the body's `id` (or the `Yungle-Event-Id` header), which stays the same through every retry and redelivery.
 - **No ordering.** A retry can arrive after a later event. Use `createdAt` if order matters to you.

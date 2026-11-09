@@ -122,7 +122,7 @@ The SDKs do this for you: every `POST` carries an `Idempotency-Key`, reused on e
 ### Requests that are safe to retry without a key
 
 - **Sending a transfer.** Finalizing an already-sent transfer does not send it again or email anyone twice.
-- **Creating a transfer** makes a new draft each time. A draft that is never sent is deleted after 24 hours, so a duplicate costs nothing, but a key avoids it.
+- **Creating a transfer** makes a new draft each time. A draft that is never sent is deleted after 24 hours (later while an upload into it is still making progress), so a duplicate costs nothing, but a key avoids it.
 
 ## Next steps
 
