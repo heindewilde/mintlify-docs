@@ -35,6 +35,13 @@ A version as a whole is retired the same way, with the same six months at least,
 
 ## Changes
 
+<Update label="2026-11-09" tags={["API","Uploads"]}>
+
+- A file the virus scanner stopped inspecting partway, such as an archive nested too deep, too large once unpacked or holding too many files, now gets `scanResult: "unscanned"`. Before, it was recorded as `clean`. It is still not treated as infected, so it stays downloadable, but it gets no preview. See [Files and scanning](/concepts#files-and-scanning).
+- `GET /imports/{fileId}`: an import that failed because Yungle's storage stopped answering mid-file now gives the reason in `error`. Before, `error` read `[object Object]`.
+
+</Update>
+
 <Update label="2026-10-12" tags={["API","MCP","CLI","JS SDK","Extension"]}>
 
 - A transfer finalized again with new `recipients` now emails them. Before, only the first send emailed anyone, so people added by a later finalize got nothing. A transfer's `recipients` now lists everyone added across calls. Before, it showed only the latest call's addresses, and was emptied by a finalize without any.

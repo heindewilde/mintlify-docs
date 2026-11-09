@@ -144,7 +144,7 @@ Downloads work like uploads: bytes never come through the JSON API. You ask for 
 
 ## Scanning and availability
 
-Every file is scanned for malware after it uploads. A file whose scan is still pending, or that the scanner could not inspect (`scanResult: "unscanned"`, usually very large files), is downloadable. A file found to be infected has its encryption key destroyed at once, so its download URL answers `404` for everyone, you included. Check `scanResult` per file with `GET /transfers/{id}`. See [Files and scanning](/concepts#files-and-scanning).
+Every file is scanned for malware after it uploads. A file whose scan is still pending, or that the scanner could not inspect (`scanResult: "unscanned"`, usually a very large file, or an archive the scanner stopped unpacking because it is nested too deep, too large once unpacked, or holds too many files), is downloadable. A file found to be infected has its encryption key destroyed at once, so its download URL answers `404` for everyone, you included. Check `scanResult` per file with `GET /transfers/{id}`. See [Files and scanning](/concepts#files-and-scanning).
 
 ## Track who downloaded your transfer
 

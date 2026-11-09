@@ -229,7 +229,7 @@ Uploads through the API are metered separately from your plan, the same on every
 
 ## After the bytes land
 
-Each file is scanned for malware once its last byte arrives. `GET /transfers/{id}` reports `scanResult` per file: `null` while the scan is pending, then `clean`, `infected`, or `unscanned` when the scanner could not inspect it. An infected file's encryption key is destroyed at once, so nobody can download it, you included. You do not need to wait for the scan before you send a transfer.
+Each file is scanned for malware once its last byte arrives. `GET /transfers/{id}` reports `scanResult` per file: `null` while the scan is pending, then `clean`, `infected`, or `unscanned` when the scanner could not inspect all of it, such as an archive nested too deep. An infected file's encryption key is destroyed at once, so nobody can download it, you included. You do not need to wait for the scan before you send a transfer.
 
 ## Next steps
 
