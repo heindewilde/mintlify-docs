@@ -35,6 +35,13 @@ A version as a whole is retired the same way, with the same six months at least,
 
 ## Changes
 
+<Update label="2026-11-09" tags={["API","Uploads"]}>
+
+- A file the virus scanner stopped inspecting partway, such as an archive nested too deep, too large once unpacked or holding too many files, now gets `scanResult: "unscanned"`. Before, it was recorded as `clean`. It is still not treated as infected, so it stays downloadable, but it gets no preview. See [Files and scanning](/concepts#files-and-scanning).
+- `GET /imports/{fileId}`: an import that failed because Yungle's storage stopped answering mid-file now gives the reason in `error`. Before, `error` read `[object Object]`.
+
+</Update>
+
 <Update label="2026-10-19" tags={["API","Uploads"]}>
 
 - **A download counts as downloaded once the last byte goes out**, not when it starts. `GET /transfers/{id}/downloads` gains `completedAt` on each event, `null` while it runs or if it stopped partway. `transfer.downloaded`, `downloadCount` and a recipient's `downloaded` follow it. A started download still counts against `maxDownloads`. Before, a zip that broke halfway counted, and emailed the sender, once per attempt.

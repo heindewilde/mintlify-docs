@@ -48,7 +48,7 @@ Guide: [Contacts](/guides/contacts).
 
 ## Files and scanning
 
-Each file in a transfer or collection is uploaded with [tus](https://tus.io), a resumable protocol, or fetched by Yungle from a URL you give it. Once a file is uploaded, Yungle scans it for viruses. A file's `scanResult` is `null` until the scan has run and `clean` after. An infected file is destroyed: its key is deleted, so it can never be downloaded.
+Each file in a transfer or collection is uploaded with [tus](https://tus.io), a resumable protocol, or fetched by Yungle from a URL you give it. Once a file is uploaded, Yungle scans it for viruses. A file's `scanResult` is `null` until the scan has run. Then it is `clean`, `infected`, or `unscanned` when the scanner could not inspect all of it. An infected file is destroyed: its key is deleted, so it can never be downloaded. An unscanned file can still be downloaded, but gets no preview.
 
 Each file also carries a `crc32` checksum, so you can check a download arrived intact.
 
