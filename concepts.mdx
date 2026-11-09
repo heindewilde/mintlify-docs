@@ -20,7 +20,7 @@ An **API key** belongs to one workspace and acts as its owner. A **scope** limit
 
 A **transfer** is a set of files sent as one link that expires. It moves through these states:
 
-1. **Draft.** You create the transfer and upload its files. Nothing is live and nobody is emailed. A draft that is never sent is deleted after 24 hours.
+1. **Draft.** You create the transfer and upload its files. Nothing is live and nobody is emailed. A draft that is never sent is deleted after 24 hours, unless one of its uploads has made progress in the last 6 hours.
 2. **Sent.** You finalize it. The link at `url` starts working, and any **recipients** you named are emailed it. `finalizedAt` is set and `status` is `active`.
 3. **Expired or revoked.** At `expiresAt` the link stops working and the files are deleted, and `status` becomes `expired`. Revoking does the same at once, and `status` becomes `removed`.
 

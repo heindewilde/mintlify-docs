@@ -20,7 +20,7 @@ From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 
 
 <Steps>
   <Step title="Create the transfer">
-    Register each file with its name and its exact size in bytes. The transfer starts as a **draft**: the link is not live and nobody is emailed until you send it in step 3. A draft you never send is deleted after 24 hours.
+    Register each file with its name and its exact size in bytes. The transfer starts as a **draft**: the link is not live and nobody is emailed until you send it in step 3. A draft you never send is deleted after 24 hours, unless one of its files is still uploading and has made progress in the last 6 hours.
 
     <CodeGroup>
 
@@ -119,7 +119,7 @@ From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 
     Finalizing makes the link live. Choose how it reaches people:
 
     - **By link:** omit `recipients`. Nobody is emailed and no email budget is spent. Share `transfer.url` yourself.
-    - **By email:** pass up to 10 addresses in `recipients`. Yungle emails each one a personal link once every file has finished uploading, so you can finalize before the upload ends.
+    - **By email:** pass up to 10 addresses in `recipients`. Yungle emails each one a personal link once every file has finished uploading, so you can finalize before the upload ends. If a file's upload makes no progress for 6 hours, Yungle drops that file and emails the link with the files that did arrive.
 
     <CodeGroup>
 
@@ -263,7 +263,8 @@ From a terminal, `yungle send final-cut.mov --to client@example.com` does steps 
           "recipientEmail": "editor@example.com",
           "sessionId": "01JBA2M4NZ5Y7W9U1S3Q5O7M9K",
           "ipTruncated": null,
-          "createdAt": "2026-10-11T14:31:07.000Z"
+          "createdAt": "2026-10-11T14:31:07.000Z",
+          "completedAt": "2026-10-11T14:33:52.000Z"
         }
       ],
       "recipients": [

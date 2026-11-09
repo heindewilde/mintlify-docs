@@ -45,6 +45,8 @@ Every account can use the API, the CLI and the MCP server. What a workspace can 
 | Transfer lifetime | {freeDays} days | You choose | You choose |
 | Collections and upload requests | No | Yes, {leafQuota} of storage | Yes, {treeQuota} of storage |
 
+A new account starts with a 14-day Leaf trial, with no card. When it ends without a plan, the workspace is on the free plan.
+
 Uploads made through the API are metered apart from the plans, the same way on every tier: the first {apiFreeUsage} each month are free, then {apiPricePerGb} per GB from prepaid credit. Downloads are never metered. [Pricing](https://yungle.co/pricing) has the full plan details.
 
 ## The base URL
@@ -65,7 +67,7 @@ The CLI, the MCP server and the JavaScript and Python SDKs are open source (MIT)
 
 Yungle is small, independent and self-hosted in the EU. Your files are always encrypted, nothing is sent to a US cloud, and every byte is served from the EU under a data processing agreement.
 
-Free usage is free: {apiFreeUsage} of API uploads each month, {apiFreeCalls} calls, and {freeTransfer} per transfer, with no card and no trial clock. Beyond the upload allowance, you pay {apiPricePerGb} per GB from credit you top up in advance.
+Free usage is free: {apiFreeUsage} of API uploads each month, {apiFreeCalls} calls, and {freeTransfer} per transfer, with no card, and they do not end when the trial does. Beyond the upload allowance, you pay {apiPricePerGb} per GB from credit you top up in advance.
 
 Credit is prepaid on purpose. No invoice can arrive for traffic you did not expect, and a runaway script cannot spend money you have not put in. When the balance runs out, your next upload is refused before any bytes move, so the failure lands on you, where you can see it, and never on a recipient waiting for a file. The call allowance is an abuse guard rather than a price, set far above what a working integration uses.
 
