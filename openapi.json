@@ -316,7 +316,7 @@
               "string",
               "null"
             ],
-            "description": "Null until the virus scan has run; `clean` after."
+            "description": "Null until the virus scan has run. Then `clean`; `unscanned` when the scanner could not inspect the whole file (an archive nested too deep, too large unpacked, or too many files) — still downloadable, but it gets no preview; `infected` files are never downloadable."
           },
           "crc32": {
             "type": [
