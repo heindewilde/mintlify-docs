@@ -35,6 +35,12 @@ A version as a whole is retired the same way, with the same six months at least,
 
 ## Changes
 
+<Update label="2026-11-16" tags={["MCP"]}>
+
+- yungle-mcp 0.3.3: started without `YUNGLE_API_KEY`, the server's message now points you to the hosted server at `https://yungle.co/mcp` first, where you sign in in the browser and need no key, and then to creating a key. See [Run it locally](/mcp-server#run-it-locally).
+
+</Update>
+
 <Update label="2026-11-09" tags={["API","Uploads"]}>
 
 - A file the virus scanner stopped inspecting partway, such as an archive nested too deep, too large once unpacked or holding too many files, now gets `scanResult: "unscanned"`. Before, it was recorded as `clean`. It is still not treated as infected, so it stays downloadable, but it gets no preview. See [Files and scanning](/concepts#files-and-scanning).

@@ -167,7 +167,7 @@ To add it by hand, to any MCP client that runs stdio servers:
 }
 ```
 
-The server checks the key when it starts and exits with the reason if the key is revoked or expired. Which tools it offers follows the key: `transfers:write` adds the sharing tools, and `send_transfer` appears only for a key that may email.
+The server checks the key when it starts and exits with the reason if the key is revoked or expired. Without `YUNGLE_API_KEY`, it still starts, but only lists its read tools, so a directory or an inspector can see what it offers. Every call then says the key is missing, and the startup message points you to the hosted server at `https://yungle.co/mcp` first, then to creating a key. Which tools it offers follows the key: `transfers:write` adds the sharing tools, and `send_transfer` appears only for a key that may email.
 
 ## Tools
 
